@@ -181,6 +181,37 @@ CPUT         dfb   $00,$00
 CCLOSEP      dfb   $01
 CCLOSEREF    dfb   $00
 
+*--------------------------------------
+* Walking a directory tree
+*
+* Only one directory is open at a time, and DIRBUF holds one block of it. A
+* descent reads the child into that same buffer, so before going down the
+* parent's position is written on a small stack and the block is read again on
+* the way back up. SET_MARK makes the return cheap: one seek rather than a
+* scan from the start.
+*--------------------------------------
+TREADF       jsr   MLI
+             dfb   $ca
+             da    TREADP
+             sta   MLIERR
+             rts
+
+TMARKF       jsr   MLI
+             dfb   $ce
+             da    TMARKP
+             sta   MLIERR
+             rts
+
+TREADP       dfb   $04
+TREADREF     dfb   $00
+             da    DIRBUF
+             da    $0200            ; one directory block
+TGOT         dfb   $00,$00
+
+TMARKP       dfb   $02
+TMARKREF     dfb   $00
+TMARKPOS     dfb   $00,$00,$00      ; a three byte file position
+
 DESTROYF     jsr   MLI
              dfb   $c1
              da    DESTPARM

@@ -638,3 +638,63 @@ TGTNEXT      lda   NTAG
 
 :none        sec
              rts
+
+*--------------------------------------
+* CAPPEND -- add "/" and the name at NAMPTR to the path already in (PBUF)
+*
+* Descending a tree is appending a component; coming back up is taking one
+* off. Both paths -- the source and the destination -- move together.
+*--------------------------------------
+CAPPEND      ldy   #$00
+             lda   (PBUF),y
+             sta   DIRLEN
+             clc
+             adc   PBUF
+             sta   PDST
+             lda   PBUF+1
+             adc   #$00
+             sta   PDST+1
+             inc   PDST             ; the slash goes one past the end
+             bne   :go
+             inc   PDST+1
+:go          jsr   APPNAME
+             lda   DIRLEN
+             sec                    ; what was there, the name, and the slash
+             adc   TMPB
+             ldy   #$00
+             sta   (PBUF),y
+             rts
+
+*--------------------------------------
+* CTRIM -- take the last component off the path in (PBUF)
+*--------------------------------------
+CTRIM        ldy   #$00
+             lda   (PBUF),y
+             beq   :done
+             tay
+:scan        lda   (PBUF),y
+             cmp   #$2f             ; '/'
+             beq   :cut
+             dey
+             bne   :scan
+             rts
+:cut         dey
+             tya
+             ldy   #$00
+             sta   (PBUF),y
+:done        rts
+
+*--------------------------------------
+* SETPW / SETPN -- aim PBUF at the source path or the destination path
+*--------------------------------------
+SETPW        lda   #<PATHWORK
+             sta   PBUF
+             lda   #>PATHWORK
+             sta   PBUF+1
+             rts
+
+SETPN        lda   #<PATHNEW
+             sta   PBUF
+             lda   #>PATHNEW
+             sta   PBUF+1
+             rts

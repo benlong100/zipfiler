@@ -665,19 +665,54 @@ assert_identical "and writes nothing"
 fi
 
 #--------------------------------------
-# A directory needs the recursion that is not built. It must say so rather
-# than half-copy itself -- design.md section 7.
+# A directory, and everything in it.
+#
+# The listing can only show that a directory appeared. What has to be checked
+# is the whole shape underneath it, two levels down, with the contents of
+# every file compared against its source.
 #--------------------------------------
-if section "copy skips a directory"; then
+if section "copy a directory"; then
 fresh_fixture
 reboot
-setup_copy
+k key "down arrow"; k line ""          # left into /FILER
+"$VII" settle 2 >/dev/null
+k text "N"; k text "BACKUP"; k line "" # somewhere to put it
+"$VII" settle 2 >/dev/null
+k ctrl I                               # the right panel goes into it
+k key "down arrow"; k line ""
+"$VII" settle 2 >/dev/null
+k key "down arrow"; k key "down arrow"; k key "down arrow"; k key "down arrow"
+k line ""
+"$VII" settle 2 >/dev/null
+k ctrl I
+snapshot
+assert_row "the destination is the new directory"  0 "/FILER/BACKUP"
+
 k key "down arrow"                     # onto DOCS
 k text "C"
-"$VII" settle 2 >/dev/null
+"$VII" settle 4 >/dev/null
 snapshot
-assert_row "nothing was copied"                  22 "0 copied"
-assert_row "and it was skipped, not failed"      22 "skipped"
+assert_row "three files went with it"             22 "3 copied"
+assert_row "and the directory is on the other side" 2 "DOCS"
+
+eject_now
+ok_tree=1
+for f in DOCS/NOTE.TXT DOCS/DRAFTS/CH1.TXT DOCS/DRAFTS/CH2.TXT; do
+    a=$("$ROOT/tools/ac" -g "$FIXTURE" "$f" 2>/dev/null)
+    b=$("$ROOT/tools/ac" -g "$FIXTURE" "BACKUP/$f" 2>/dev/null)
+    [ -n "$a" ] && [ "$a" = "$b" ] || ok_tree=0
+done
+if [ "$ok_tree" = "1" ]; then
+    ok "and every file two levels down matches its source"
+else
+    bad "and every file two levels down matches its source" \
+        "$("$ROOT/tools/ac" -l "$FIXTURE" | sed -n '9,15p')"
+fi
+if "$ROOT/tools/ac" -l "$FIXTURE" | grep -q "DRAFTS DIR"; then
+    ok "the subdirectory below it was made too"
+else
+    bad "the subdirectory below it was made too" "no DRAFTS under BACKUP"
+fi
 fi
 
 #--------------------------------------

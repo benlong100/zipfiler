@@ -4,6 +4,9 @@
 * The direction is fixed so that it never has to be expressed; when something
 * has to go the other way, S exchanges the panels. See design.md section 5.
 *
+* A directory goes with everything inside it -- see CPYTREE at the foot of
+* this file, which is written flat rather than recursively.
+*
 * Everything here is written so that a failure leaves nothing behind. A copy
 * that stops halfway leaves a truncated file on the destination with a
 * plausible name and the right type, which is worse than no copy at all
@@ -35,14 +38,16 @@ CPYCMD       lda   #$00
 :each        jsr   TGTNEXT
              bcs   :done
 
-*--- a directory needs the recursion that is not built yet, and says so
-*    rather than half-copying itself
+*--- a directory goes with everything in it
              ldy   TGTI
              lda   (PTYPE),y
              cmp   #$0f
              bne   :file
-             inc   NSKIP
-             jmp   :next
+             jsr   CPYPATHS
+             jsr   CPYTREE
+             lda   CPYSTOP
+             beq   :next
+             jmp   :done
 
 :file        jsr   CPYPATHS
              jsr   CPYONE
@@ -332,4 +337,287 @@ MCPYFAIL     asc   "could not be copied"
              dum   $1492
 OVERW        ds    1                ; what was decided about existing files
 CPYSTOP      ds    1                ; the writer asked to stop
+             dend
+
+*--------------------------------------
+* CPYTREE -- copy the directory at PATHWORK to PATHNEW, and all of it
+*
+* Written flat rather than recursively. Only one directory is open at a time
+* and DIRBUF holds one block of it, so going down would lose the parent's
+* place -- instead the place is written on a small stack, and on the way back
+* up the block is read again with SET_MARK doing the seek.
+*
+* PATHWORK and PATHNEW ARE the descent. Appending a component to both is
+* going down; taking one off each is coming back up. That is why no separate
+* pair of buffers is needed, and why CPYONE works unchanged at any depth: it
+* copies whatever those two paths currently name.
+*--------------------------------------
+CPYTREE      lda   #$00
+             sta   CDEPTH
+             sta   CBLK
+             sta   CENT
+
+*--- the top of the tree. An existing directory is not an error here: the
+*    files inside it are still to be copied.
+             jsr   MKDESTDIR
+             bcc   :block
+             jmp   :bail
+
+*--- read one block of the directory named by PATHWORK
+:block       jsr   TOPENDIR
+             bcc   :got
+             jmp   :updir           ; unreadable: treat it as finished
+:got         lda   TGOT
+             ora   TGOT+1
+             bne   *+5              ; no more blocks
+             jmp   :updir
+
+             lda   #<DIRBUF+4
+             sta   ENTPTR
+             lda   #>DIRBUF+4
+             sta   ENTPTR+1
+             lda   CENT
+             beq   :scan
+             sta   TMPA             ; skip the entries already dealt with
+:skip        lda   ENTPTR
+             clc
+             adc   #$27
+             sta   ENTPTR
+             bcc   :s2
+             inc   ENTPTR+1
+:s2          dec   TMPA
+             bne   :skip
+
+:scan        lda   CENT
+             cmp   #$0d             ; thirteen to a block
+             bcc   :entry
+             inc   CBLK             ; on to the next block
+             lda   #$00
+             sta   CENT
+             jmp   :block
+
+:entry       jsr   CHECKSTOP
+             bcc   *+5
+             jmp   :bail
+             ldy   #$00
+             lda   (ENTPTR),y
+             bne   *+5              ; never used, or since deleted
+             jmp   :next
+             pha
+             lsr
+             lsr
+             lsr
+             lsr
+             sta   TMPC             ; the storage type
+             pla
+             and   #$0f
+             sta   TMPB             ; the name length
+             lda   TMPC
+             cmp   #$0e
+             bcc   *+5              ; the directory's own header
+             jmp   :next
+
+*--- take the name out of DIRBUF before anything can overwrite it
+             ldy   #$00
+             lda   TMPB
+             sta   NAMBUF
+:name        iny
+             lda   (ENTPTR),y
+             sta   NAMBUF,y
+             cpy   TMPB
+             bcc   :name
+             lda   #<NAMBUF
+             sta   NAMPTR
+             lda   #>NAMBUF
+             sta   NAMPTR+1
+
+             lda   TMPC
+             cmp   #$0d             ; a subdirectory
+             beq   :down
+
+*--- a file: hang its name on both paths, copy it, take it off again
+             jsr   SETPW
+             jsr   CAPPEND
+             jsr   SETPN
+             jsr   CAPPEND
+             jsr   CPYONE
+             bcc   :counted
+             lda   CPYSTOP
+             beq   :untack
+             jsr   UNTACK
+             jmp   :bail
+:counted     inc   NDONE
+             jsr   SHOWPROG
+:untack      jsr   UNTACK
+             jmp   :next
+
+*--- a directory: go into it, and remember where we were
+:down        jsr   SETPW
+             jsr   CAPPEND
+             jsr   SETPN
+             jsr   CAPPEND
+             jsr   MKDESTDIR
+             bcs   :undown
+             ldx   CDEPTH
+             cpx   #MAXDEEP
+             bcs   :undown          ; deeper than the stack goes
+             lda   CBLK
+             sta   LVLBLK,x
+             lda   CENT
+             clc
+             adc   #$01             ; resume AFTER this entry
+             sta   LVLENT,x
+             inc   CDEPTH
+             lda   #$00
+             sta   CBLK
+             sta   CENT
+             jmp   :block
+:undown      jsr   UNTACK
+             inc   NFAIL
+             jmp   :next
+
+:next        inc   CENT
+             lda   ENTPTR
+             clc
+             adc   #$27
+             sta   ENTPTR
+             bcc   :n2
+             inc   ENTPTR+1
+:n2          jmp   :scan
+
+*--- the end of a directory: back up a level, or stop if this was the top
+:updir       lda   CDEPTH
+             beq   :bail
+             dec   CDEPTH
+             jsr   UNTACK
+             ldx   CDEPTH
+             lda   LVLBLK,x
+             sta   CBLK
+             lda   LVLENT,x
+             sta   CENT
+             jmp   :block
+
+:bail        rts
+
+*--------------------------------------
+* UNTACK -- take the last component off both paths
+*--------------------------------------
+UNTACK       jsr   SETPW
+             jsr   CTRIM
+             jsr   SETPN
+             jmp   CTRIM
+
+*--------------------------------------
+* TOPENDIR -- open PATHWORK, seek to block CBLK, read it, close again
+*
+* Opened and closed around every block so that CPYONE has both file buffers
+* to itself. The seek is what makes that affordable.
+*--------------------------------------
+TOPENDIR     jsr   COPENSF
+             bcs   :no
+             lda   SRCREF
+             sta   TREADREF
+             sta   TMARKREF
+             sta   CCLOSEREF
+
+             lda   #$00             ; block CBLK is 512 * CBLK bytes in
+             sta   TMARKPOS
+             lda   CBLK
+             asl                    ; the high byte of CBLK * 512
+             sta   TMARKPOS+2
+             lda   CBLK
+             lsr
+             lda   #$00
+             ror
+             sta   TMARKPOS+1
+             jsr   TMARKF
+             bcs   :shut
+             jsr   TREADF
+             php
+             jsr   CCLOSEF
+             plp
+             bcs   :no
+             clc
+             rts
+:shut        jsr   CCLOSEF
+:no          sec
+             rts
+
+*--------------------------------------
+* MKDESTDIR -- make PATHNEW a directory. Already being one is not a failure.
+*--------------------------------------
+MKDESTDIR    lda   #$c3
+             sta   CREACCESS
+             lda   #$0f
+             sta   CRETYPE
+             lda   #$00
+             sta   CREAUX
+             sta   CREAUX+1
+             sta   CREDATE
+             sta   CREDATE+1
+             sta   CRETIME
+             sta   CRETIME+1
+             lda   #$0d
+             sta   CRESTORE
+             jsr   CREATEF
+             php
+             lda   #$01             ; back to seedling, for the files
+             sta   CRESTORE
+             plp
+             bcc   :ok
+             lda   MLIERR
+             cmp   #$47             ; it is already there, which is fine
+             beq   :ok
+             sec
+             rts
+:ok          clc
+             rts
+
+*--------------------------------------
+* CHECKSTOP -- ESC gives up on a tree that is taking too long
+*--------------------------------------
+CHECKSTOP    lda   KBD
+             bpl   :on
+             cmp   #$9b
+             bne   :eat
+             sta   KBDSTRB
+             lda   #$01
+             sta   CPYSTOP
+             sec
+             rts
+:eat         sta   KBDSTRB          ; anything else is not an answer
+:on          clc
+             rts
+
+*--------------------------------------
+* SHOWPROG -- a running count, because a tree off a floppy is slow
+*--------------------------------------
+SHOWPROG     jsr   CLRBUF
+             jsr   PANELBAR
+             lda   NDONE
+             sta   NUMLO
+             lda   #$00
+             sta   NUMHI
+             sta   TMPA
+             jsr   PUTNUM
+             lda   #<MPROG
+             ldy   #>MPROG
+             jsr   SETSTR
+             ldx   #$06
+             jsr   BUFSTR
+             lda   #STATROW
+             jmp   DRAWLINE
+
+MPROG        asc   "copied so far;  ESC to stop"
+             dfb   $00
+
+MAXDEEP      equ   8
+
+             dum   $1494
+CDEPTH       ds    1                ; how far down the tree
+CBLK         ds    1                ; which block of this directory
+CENT         ds    1                ; and which entry in it
+LVLBLK       ds    MAXDEEP          ; where to resume, a level up
+LVLENT       ds    MAXDEEP
+NAMBUF       ds    16               ; a name taken out of DIRBUF before it goes
              dend

@@ -232,9 +232,7 @@ machine, error `$4E` -- so the program does not need its own guard, and says
 "a directory has to be empty first" rather than showing a hex code. The block
 compare confirms nothing at all was written.
 
-**Copying a directory** must refuse clearly until §11 is built. Directories
-appear in the listing because they have to be navigable, so they can be tagged,
-so somebody will try.
+**Copying a directory** takes everything inside it -- see §11, which is built.
 
 **As built: `C`.** Both files are open at once, so the source and destination
 each have their own 1K ProDOS buffer and their own parameter blocks; 8K of
@@ -311,9 +309,25 @@ use for.
 Both are additive rather than structural, provided the first version is built
 so they can be added:
 
-- **Copying a directory and its contents.** Write copy-one-file as a callable
-  unit and build pathnames so they can go deeper, and recursion later wraps it
-  rather than replacing it.
+- ~~**Copying a directory and its contents.**~~ **Built, and the prediction
+  held**: because copy-one-file was a callable unit taking two full paths, and
+  the path builder took a destination buffer, the tree walk wrapped it without
+  unpicking anything.
+
+  It is written **flat rather than recursively**. Only one directory is open at
+  a time and `DIRBUF` holds one block of it, so descending would lose the
+  parent's place -- so the place, which block and which entry, goes on a small
+  stack, and the block is read again on the way back up with `SET_MARK` doing
+  the seek rather than a scan from the start.
+
+  `PATHWORK` and `PATHNEW` **are** the descent. Appending a component to both
+  is going down and taking one off each is coming back up, which is why no
+  second pair of buffers was wanted and why `CPYONE` needs no notion of depth:
+  it copies whatever those two paths currently name.
+
+  Depth stops at eight, well past what ProDOS's 64-character pathname budget
+  allows in practice. `ESC` gives up part way, and a running count is shown,
+  because a tree off a floppy is measured in seconds.
 - **Checking free space before a copy.** Reading the volume bitmap is a
   precondition that bolts on in front. What cannot be deferred is handling the
   failure — see §7.
