@@ -56,7 +56,10 @@ run: $(IMAGE)
 screen:
 	@$(VII) screen
 
+# The fixture is rebuilt every run: the suite writes to it, and it must never
+# be anybody's real disk. See docs/design.md section 12.
 test: $(IMAGE)
+	@tests/mkfixture.sh >/dev/null
 	@tests/run.sh $(SECTION)
 
 # Virtual ][ buffers image writes until eject.

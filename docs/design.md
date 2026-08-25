@@ -271,6 +271,20 @@ purpose is destructive operations on somebody's disks.
 - Build the fixture-and-compare scaffolding **before** the first `DESTROY`
   call, not after it.
 
+**As built.** `tests/mkfixture.sh` makes `build/FIXTURE.po` fresh every run --
+two levels of subdirectory, several file types -- and `tests/run.sh` drives it.
+`tools/imgblocks.py` compares two images block by block and can be told which
+blocks it should find changed, which is how a destructive command will be
+checked when there is one: take the image, do the thing, eject, and name the
+blocks that were allowed to move.
+
+The assertion that matters most today is the one that says the program does
+not write at all. A whole navigating session -- down two levels, back up,
+across to the other panel, a swap -- and the image comes back byte for byte.
+Nothing on the screen could have told us that. `assert_inverse` is the same
+idea in miniature: inverse text reads back as its own ASCII, so whether the
+cursor line is really highlighted is a question only screen memory answers.
+
 ## 13. Open questions
 
 - The product name.

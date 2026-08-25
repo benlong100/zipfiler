@@ -12,3 +12,4 @@ tests/snapshots/*.actual.png
 notes/
 src/_FileInformation.txt
 src/*.SYSTEM
+build/FIXTURE*.po
