@@ -32,7 +32,8 @@ ONLPARM      dfb   $02
 ONLBUF       ds    256
              dend
 
-             dum   $1410
+*--- $1400-$1410 is filer.S's; tools/dumcheck.py keeps these honest
+             dum   $1418
 MLIERR       ds    1                ; the code from the last MLI call
              dend
 
@@ -61,7 +62,8 @@ CLOSEF       jsr   MLI
              rts
 
 OPENPARM     dfb   $03
-             da    PATHBUF          ; length-prefixed, LOW ascii
+             da    PATH0            ; SELPANEL aims this at the panel being
+                                    ; read; the value here is only a start
              da    IOBUF            ; 1K, page aligned, ProDOS scribbles here
 OPENREF      dfb   $00              ; out: the reference number
 
@@ -81,8 +83,52 @@ IOBUF        ds    1024
 DIRBUF       ds    512
              dend
 
+*--------------------------------------
+* GINFOF / SINFOF -- read and write a file's attributes
+*
+* The two parameter lists overlap but are NOT the same shape. GET_FILE_INFO
+* returns storage type and blocks used in the three bytes that SET_FILE_INFO
+* requires to be zero -- so they are kept as separate blocks and the fields
+* that carry over are copied across deliberately. Sharing one block would
+* write a file's block count into a reserved field, which is the kind of
+* mistake that is invisible until a directory is unreadable.
+*--------------------------------------
+GINFOF       jsr   MLI
+             dfb   $c4
+             da    GINFOPARM
+             sta   MLIERR
+             rts
+
+SINFOF       jsr   MLI
+             dfb   $c3
+             da    SINFOPARM
+             sta   MLIERR
+             rts
+
+GINFOPARM    dfb   $0a
+             da    PATHWORK
+GACCESS      dfb   $00
+GTYPE        dfb   $00
+GAUX         dfb   $00,$00
+GSTORE       dfb   $00
+GBLOCKS      dfb   $00,$00
+GMODD        dfb   $00,$00
+GMODT        dfb   $00,$00
+GCRED        dfb   $00,$00
+GCRET        dfb   $00,$00
+
+SINFOPARM    dfb   $07
+             da    PATHWORK
+SACCESS      dfb   $00
+STYPE        dfb   $00
+SAUX         dfb   $00,$00
+             dfb   $00,$00,$00      ; reserved, and it must stay zero
+SMODD        dfb   $00,$00
+SMODT        dfb   $00,$00
+
 *--- A pathname: a length byte then up to 64 characters, low ASCII, which is
-*    the one place on this machine where the high bit stays off.
+*    the one place on this machine where the high bit stays off. PATHWORK is
+*    the full path of one entry, built when a command needs to name it.
              dum   $1420
-PATHBUF      ds    65
+PATHWORK     ds    65
              dend

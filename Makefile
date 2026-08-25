@@ -31,7 +31,10 @@ all: $(BIN)
 SOURCES := $(wildcard src/*.S)
 
 # Merlin32 writes its object next to the source, named by the `dsk` directive.
+# A dum block declares addresses without emitting anything, so two of them can
+# quietly claim the same bytes and Merlin will not say a word.
 $(BIN): $(SOURCES) | $(BUILD)
+	@python3 $(TOOLS)/dumcheck.py
 	@$(MERLIN) $(ASMINC) $(SRC) > $(BUILD)/merlin32.log 2>&1 || \
 		{ echo "--- Merlin32 failed ---"; cat $(BUILD)/merlin32.log; exit 1; }
 	@grep -iE '^\s+(Error|Warning)' $(BUILD)/merlin32.log && exit 1 || true

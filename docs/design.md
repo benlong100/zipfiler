@@ -189,6 +189,14 @@ the first version.
 **Copying a file onto itself** needs a guard. It is easy to reach with the same
 volume open in both panels.
 
+**As built: `L`.** The access byte is *changed*, not replaced -- destroy,
+rename and write go off or on and everything else in it, the backup bit above
+all, is left as ProDOS had it. `GET_FILE_INFO` and `SET_FILE_INFO` are given
+separate parameter blocks, because the three bytes `SET` requires to be zero
+are exactly where `GET` returns the storage type and block count; sharing one
+block would write a file's size into a reserved field, which stays invisible
+until a directory will not read.
+
 **Delete refuses a locked file** and says so, rather than quietly unlocking it.
 The lock is the writer's stated intent and `L` is one key away.
 
@@ -290,9 +298,8 @@ cursor line is really highlighted is a question only screen memory answers.
 
 - The product name.
 - Whether the hint row earns its place, or a twenty-first entry is worth more.
-- Whether `L` toggles, or lock and unlock are separate keys. A toggle reads
-  better against a mixed tagged set only if it is defined as "lock unless all
-  are locked".
+- ~~Whether `L` toggles~~. It toggles, defined as *lock unless every target is
+  locked already*, so one key always does the thing that is not already true.
 - What a batch does when the destination directory fills mid-run: stop, or
   carry on and report? Stopping is probably right, since everything after it
   will fail too.

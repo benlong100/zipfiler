@@ -35,6 +35,8 @@ MAINLOOP     jsr   DRAWSCREEN
              bpl   :key
              sta   KEYCHR
              sta   KBDSTRB
+             lda   #$00             ; a keystroke retires the last message
+             sta   MSGON
              jsr   FOCUS            ; every command acts on the focused panel
              lda   KEYCHR
              cmp   #$8b             ; up arrow
@@ -53,6 +55,10 @@ MAINLOOP     jsr   DRAWSCREEN
              beq   :tswap
              cmp   #$a0             ; SPACE: tag, and step down
              beq   :ttag
+             cmp   #$cc             ; L, either case: lock or unlock
+             beq   :tlock
+             cmp   #$ec
+             beq   :tlock
              cmp   #$9b             ; ESC: back to ProDOS
              beq   :tquit
              jmp   :key
@@ -66,6 +72,7 @@ MAINLOOP     jsr   DRAWSCREEN
 :tswap       jmp   :swap
 :tquit       jmp   :quit
 :ttag        jmp   :tag
+:tlock       jmp   :lock
 
 :tab         lda   PANEL
              eor   #$01
@@ -199,6 +206,23 @@ MAINLOOP     jsr   DRAWSCREEN
              inc   PTOP,x
 :tagged      jmp   MAINLOOP
 
+*--- L. Lock, unless everything it applies to is locked already, in which case
+*    unlock: one key, and it does the thing that is not already true.
+:lock        ldx   PANSEL
+             lda   PINVOL,x
+             beq   *+5
+             jmp   :novol           ; a volume has no access byte to change
+             ldx   PANSEL
+             lda   PCOUNT,x
+             bne   *+5
+             jmp   :key
+             jsr   LOCKCMD
+             jmp   MAINLOOP
+:novol       lda   #<MVOL
+             ldy   #>MVOL
+             jsr   SAYTEXT
+             jmp   MAINLOOP
+
 QUITPARM     dfb   $04
              dfb   $00
              da    $0000
@@ -231,6 +255,103 @@ RESCAN       ldx   PANSEL
              beq   :dir
              jmp   VOLSCAN
 :dir         jmp   DIRSCAN
+
+*--------------------------------------
+* LOCKCMD -- lock or unlock everything the command applies to
+*
+* Two passes. The first asks whether they are ALL locked already, because
+* that is what decides which way one key should go. The second does it.
+*
+* The access byte is changed rather than replaced: the destroy, rename and
+* write bits go off or on and everything else in it -- the backup bit above
+* all -- is left exactly as ProDOS had it.
+*--------------------------------------
+LOCKCMD      jsr   TGTINIT
+             lda   #$01
+             sta   ALLLOCK
+:ask         jsr   TGTNEXT
+             bcs   :apply
+             ldy   TGTI
+             lda   (PACC),y
+             and   #$02             ; write-enable: set means unlocked
+             beq   :ask
+             lda   #$00
+             sta   ALLLOCK
+             jmp   :ask
+
+:apply       jsr   TGTINIT
+             lda   #$00
+             sta   NDONE
+             sta   NSKIP
+:each        jsr   TGTNEXT
+             bcs   :done
+             lda   TGTI
+             jsr   PATHENT
+             jsr   GINFOF
+             bcs   :skip
+
+             lda   GACCESS
+             ldx   ALLLOCK
+             bne   :unlock
+             and   #$3d             ; clear destroy, rename and write
+             jmp   :put
+:unlock      ora   #$c2             ; and set them again
+:put         sta   SACCESS
+
+*--- the fields SET_FILE_INFO carries over, copied deliberately. Its reserved
+*    bytes are where GET_FILE_INFO left the storage type and block count, so
+*    the two blocks are never shared.
+             lda   GTYPE
+             sta   STYPE
+             lda   GAUX
+             sta   SAUX
+             lda   GAUX+1
+             sta   SAUX+1
+             lda   GMODD
+             sta   SMODD
+             lda   GMODD+1
+             sta   SMODD+1
+             lda   GMODT
+             sta   SMODT
+             lda   GMODT+1
+             sta   SMODT+1
+             jsr   SINFOF
+             bcs   :skip
+             inc   NDONE
+             jmp   :each
+:skip        inc   NSKIP
+             jmp   :each
+
+:done        jsr   RESCAN           ; the listing has changed underneath us
+             lda   NDONE
+             sta   MSGN
+             lda   ALLLOCK
+             bne   :sayun
+             lda   #<MLOCKED
+             ldy   #>MLOCKED
+             jmp   SAYMSG
+:sayun       lda   #<MUNLOCK
+             ldy   #>MUNLOCK
+             jmp   SAYMSG
+
+*--------------------------------------
+* SAYMSG -- a count and a phrase in the status row, until the next keystroke
+* SAYTEXT -- a phrase on its own
+*--------------------------------------
+SAYMSG       sta   MSGPTR
+             sty   MSGPTR+1
+             lda   #$01
+             sta   MSGON
+             sta   MSGNUM
+             rts
+
+SAYTEXT      sta   MSGPTR
+             sty   MSGPTR+1
+             lda   #$01
+             sta   MSGON
+             lda   #$00
+             sta   MSGNUM
+             rts
 
 *--------------------------------------
 * DRAWSCREEN -- the whole layout
@@ -572,7 +693,30 @@ TYPLEN       equ   *-TYPTBL
 *--------------------------------------
 DRAWSTATUS   jsr   CLRBUF
              jsr   PANELBAR
-             jsr   FOCUS            ; the focused panel is the one described
+             lda   MSGON
+             beq   :counts
+             lda   MSGNUM
+             beq   :textonly
+             lda   MSGN
+             sta   NUMLO
+             lda   #$00
+             sta   NUMHI
+             sta   TMPA
+             jsr   PUTNUM
+             lda   MSGPTR
+             ldy   MSGPTR+1
+             jsr   SETSTR
+             ldx   #$06
+             jsr   BUFSTR
+             jmp   :draw
+:textonly    lda   MSGPTR
+             ldy   MSGPTR+1
+             jsr   SETSTR
+             ldx   #$00
+             jsr   BUFSTR
+             jmp   :draw
+
+:counts      jsr   FOCUS            ; the focused panel is the one described
              jsr   TAGSTATS
              lda   NTAG
              beq   :plain
@@ -637,7 +781,13 @@ TAGTXT       asc   "tagged,"
              dfb   $00
 BLKTXT       asc   "blocks"
              dfb   $00
-HINTTXT      asc   "SPC tag   TAB panel   RET open   LEFT up   S wap   ESC quit"
+MLOCKED      asc   "locked"
+             dfb   $00
+MUNLOCK      asc   "unlocked"
+             dfb   $00
+MVOL         asc   "a volume cannot be locked"
+             dfb   $00
+HINTTXT      asc   "SPC tag  TAB panel  RET open  LEFT up  L ock  S wap  ESC quit"
              dfb   $00
 
 *--- mutable storage
@@ -651,6 +801,13 @@ NUMLO        ds    1                ; PUTNUM's value
 NUMHI        ds    1
 DIG          ds    1
 LEADZ        ds    1
+ALLLOCK      ds    1                ; is every target locked already?
+NDONE        ds    1                ; what a command managed
+NSKIP        ds    1                ; and what it could not
+MSGON        ds    1                ; a message owns the status row
+MSGNUM       ds    1                ; and whether it has a count in front
+MSGN         ds    1
+MSGPTR       ds    2
              dend
 
 *--- The rest emit code, and $2000 belongs to START.

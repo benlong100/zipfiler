@@ -81,6 +81,35 @@ print('yes' if all(b<0x80 for b in d) else 'no')")
     fi
 }
 
+# A destructive section starts from a fixture nobody has written to yet, so
+# sections cannot contaminate each other.
+fresh_fixture() {
+    "$ROOT/tests/mkfixture.sh" >/dev/null
+    cp "$FIXTURE" "$BEFORE"
+}
+
+eject_now() {
+    osascript -e 'tell application "Virtual ][" to tell (last machine) to eject device "S6D1"' 2>/dev/null || true
+    sleep 1
+}
+
+# assert_blocks <name> <block> [<block>...] -- exactly these and no others
+assert_blocks() {
+    local name="$1"; shift
+    local out
+    out="$(python3 "$ROOT/tools/imgblocks.py" "$BEFORE" "$FIXTURE" --expect "$@" 2>&1)"
+    case "$out" in
+        changed\ exactly*) ok "$name" ;;
+        *) bad "$name" "$out" ;;
+    esac
+}
+
+assert_identical() {
+    local out
+    out="$(python3 "$ROOT/tools/imgblocks.py" "$BEFORE" "$FIXTURE" 2>&1)"
+    if [ "$out" = "identical" ]; then ok "$1"; else bad "$1" "$out"; fi
+}
+
 reboot() {
     "$VII" boot "$FIXTURE" >/dev/null || { echo "boot failed" >&2; exit 1; }
     "$VII" speed maximum >/dev/null
@@ -221,6 +250,94 @@ k key "left arrow"                     # back out: a new listing
 snapshot
 assert_norow "tags go when the listing does"      2 ">"
 assert_row "and the status says so"              22 "entries"
+fi
+
+#--------------------------------------
+# L, and the first thing in the program that writes.
+#
+# One byte of one directory entry, so the block compare can be exact: if
+# anything else moved, something is wrong that the screen would never show.
+#--------------------------------------
+if section "lock"; then
+fresh_fixture
+reboot
+k key "down arrow"; k line ""          # into /FILER
+k key "down arrow"; k key "down arrow" # onto README.TXT
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "README starts out unlocked"           4 "  README.TXT"
+
+k text "L"
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "L marks it locked"                    4 "*README.TXT"
+assert_row "and says what it did"                22 "1 locked"
+
+eject_now
+assert_blocks "exactly one directory block moved" 2
+if "$ROOT/tools/ac" -l "$FIXTURE" | grep -q '^\* README.TXT'; then
+    ok "and ProDOS agrees the file is locked"
+else
+    bad "and ProDOS agrees the file is locked" \
+        "$("$ROOT/tools/ac" -l "$FIXTURE" | grep README)"
+fi
+fi
+
+#--------------------------------------
+# The same key the other way. A lock and an unlock must leave the disk exactly
+# as it was found -- not nearly, exactly. Nothing but a block compare can say.
+#--------------------------------------
+if section "unlock"; then
+fresh_fixture
+reboot
+k key "down arrow"; k line ""
+k key "down arrow"; k key "down arrow"
+k text "L"                             # lock
+"$VII" settle 2 >/dev/null
+k text "L"                             # and unlock again
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "the mark has gone"                    4 "  README.TXT"
+assert_row "and it says so"                      22 "1 unlocked"
+eject_now
+assert_identical "locking and unlocking leaves the disk byte for byte as it was"
+fi
+
+#--------------------------------------
+# A tagged set, which is what the command is really for.
+#--------------------------------------
+if section "lock a set"; then
+fresh_fixture
+reboot
+k key "down arrow"; k line ""          # into /FILER
+"$VII" settle 2 >/dev/null
+k text " "                             # tag FILER.SYSTEM
+k text " "                             # tag DOCS
+k text " "                             # tag README.TXT
+k text "L"
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "all three are locked"                 2 "*FILER.SYSTEM"
+assert_row "including the directory"              3 "*DOCS"
+assert_row "and the third"                        4 "*README.TXT"
+assert_row "and it counted them"                 22 "3 locked"
+assert_norow "the untagged one is untouched"      5 "*DATA.BIN"
+eject_now
+assert_blocks "and still only the one block"      2
+fi
+
+#--------------------------------------
+# A volume has no access byte, so L must say so rather than fail quietly.
+#--------------------------------------
+if section "lock refuses a volume"; then
+fresh_fixture
+reboot
+k text "L"
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "it explains itself"                  22 "volume cannot be locked"
+eject_now
+assert_identical "and wrote nothing"
 fi
 
 #--------------------------------------

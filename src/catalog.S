@@ -366,6 +366,9 @@ ENTN         ds    1
 NTAG         ds    1                ; TAGSTATS: how many are tagged
 TBLKLO       ds    1                ; and the blocks they come to
 TBLKHI       ds    1
+TGTI         ds    1                ; the target a command is working on
+SCANI        ds    1                ; how far the walk has got
+DIRLEN       ds    1                ; PATHENT: the directory part's length
              dend
 
              dum   $1500
@@ -448,3 +451,87 @@ TAGSTATS     lda   #$00
              ldx   PANSEL
              jmp   :each
 :done        rts
+
+*--------------------------------------
+* PATHENT -- PATHWORK = the full path of entry A in the chosen panel
+*
+* A command has to name a file to ProDOS, and the panel only holds the
+* directory. This builds the whole thing in a buffer of its own, so the
+* panel's own path is never disturbed by an operation on one of its entries.
+*--------------------------------------
+*--- NAMEAT below uses TMPA as scratch, so the directory's length is kept
+*    somewhere of its own. It cost an hour: the path came out as the
+*    directory, then rubbish, then the name at offset 36.
+PATHENT      pha
+             ldy   #$00
+             lda   (PATHPTR),y
+             sta   DIRLEN           ; the directory's length
+             sta   PATHWORK
+             tay
+             beq   :name
+:copy        lda   (PATHPTR),y
+             sta   PATHWORK,y
+             dey
+             bne   :copy
+
+:name        pla
+             jsr   NAMEAT
+             lda   #<PATHWORK
+             clc
+             adc   DIRLEN
+             sta   PDST
+             lda   #>PATHWORK
+             adc   #$00
+             sta   PDST+1
+             inc   PDST             ; the slash goes one past the end
+             bne   :go
+             inc   PDST+1
+:go          jsr   APPNAME
+             lda   DIRLEN
+             sec                    ; the directory, the name and the slash
+             adc   TMPB
+             sta   PATHWORK
+             rts
+
+*--------------------------------------
+* Which entries a command applies to
+*
+* The tagged set if there is one, and the cursor line if there is not. Every
+* destructive command walks its targets through here, so the rule is written
+* once -- design.md section 6.
+*--------------------------------------
+TGTINIT      jsr   TAGSTATS         ; NTAG decides which kind of walk this is
+             lda   #$00
+             sta   SCANI
+             rts
+
+*--- TGTNEXT -- carry clear and TGTI = the next target; carry set at the end
+TGTNEXT      lda   NTAG
+             beq   :cursor
+
+             ldx   PANSEL
+:scan        lda   SCANI
+             cmp   PCOUNT,x
+             bcs   :none
+             jsr   TAGTST
+             bne   :hit
+             inc   SCANI
+             ldx   PANSEL
+             jmp   :scan
+:hit         lda   SCANI
+             sta   TGTI
+             inc   SCANI
+             clc
+             rts
+
+:cursor      lda   SCANI
+             bne   :none            ; the cursor line, and only once
+             ldx   PANSEL
+             lda   PCURSEL,x
+             sta   TGTI
+             inc   SCANI
+             clc
+             rts
+
+:none        sec
+             rts
