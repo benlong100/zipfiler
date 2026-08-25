@@ -10,3 +10,5 @@ vendor/*.dsk
 tests/snapshots/*.actual.png
 .DS_Store
 notes/
+src/_FileInformation.txt
+src/*.SYSTEM
