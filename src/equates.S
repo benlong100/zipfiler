@@ -27,6 +27,8 @@ SCRPTR       equ   $06              ; 2 bytes, current screen row base
 STRPTR       equ   $08              ; 2 bytes, string source
 TMPA         equ   $0a
 TMPB         equ   $0b
+NAMPTR       equ   $0c              ; 2 bytes, into the 4K name block
+TMPC         equ   $0e
 KEYCHR       equ   $18              ; last key read
 
 *--- The screen. Fixed at 80 columns: unlike the editor there is no 40 column
@@ -45,6 +47,10 @@ TOPROW       equ   2                ; first entry row
 PANELROWS    equ   20               ; entries visible at once
 STATROW      equ   22               ; tagged count, errors, progress
 HINTROW      equ   23
+
+*--- A volume is not a file and has no ProDOS file type. $00 is "typeless"
+*    and effectively unused by real files, so it serves as the marker.
+TYPVOL       equ   $00
 
 *--- screen codes we draw chrome with ---
 CHDASH       equ   $ad              ; '-'

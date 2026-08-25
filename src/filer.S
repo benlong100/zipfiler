@@ -19,6 +19,7 @@
 * START
 *--------------------------------------
 START        jsr   DISPINIT
+             jsr   VOLSCAN
              jsr   DRAWSCREEN
 
 *--- wait for a key, then hand back to ProDOS
@@ -87,50 +88,16 @@ PANELBAR     lda   #CHBAR
              rts
 
 *--------------------------------------
-* DRAWENTRIES -- the panel rows
-*
-* Fixed content for now. ENTL and ENTR are tables of string pointers, ending
-* in a zero high byte; a blank row is drawn for every row past the end.
+* DRAWENTRIES -- the panel rows, from what the panel has read
 *--------------------------------------
 DRAWENTRIES  lda   #$00
              sta   ROWN
 :row         jsr   CLRBUF
              jsr   PANELBAR
              lda   ROWN
-             asl
-             tax
-             lda   ROWN
-             cmp   #LCOUNT
-             bcs   :right           ; past the end of the left list
-             lda   ROWN
-             asl
-             tax
-             lda   ENTL+1,x
-             pha
-             lda   ENTL,x
-             ldy   #$00
-             sta   STRPTR
-             pla
-             sta   STRPTR+1
-             ldx   #$00
-             jsr   BUFSTR
-:right       lda   ROWN
-             asl
-             tax
-             lda   ROWN
-             cmp   #RCOUNT
-             bcs   :put
-             lda   ROWN
-             asl
-             tax
-             lda   ENTR+1,x
-             pha
-             lda   ENTR,x
-             sta   STRPTR
-             pla
-             sta   STRPTR+1
-             ldx   #RCOL
-             jsr   BUFSTR
+             cmp   LCOUNT
+             bcs   :put             ; past the end of the listing: blank row
+             jsr   FMTLEFT
 :put         lda   ROWN
              clc
              adc   #TOPROW
@@ -140,6 +107,139 @@ DRAWENTRIES  lda   #$00
              cmp   #PANELROWS
              bcc   :row
              rts
+
+*--------------------------------------
+* FMTLEFT -- entry ROWN of the left panel into LINEBUF
+*
+* Columns, and they are the ones docs/design.md counted: 0 tag, 1 lock,
+* 2-16 name, 18-20 type, 22-26 blocks.
+*--------------------------------------
+FMTLEFT      jsr   NAMEPTR
+             ldy   #$00
+             lda   (NAMPTR),y
+             sta   TMPB             ; length
+             beq   :type
+             ldx   #$02             ; the name starts at column 2
+:copy        iny
+             lda   (NAMPTR),y
+             ora   #$80             ; held low ASCII, drawn high
+             sta   LINEBUF,x
+             inx
+             dec   TMPB
+             bne   :copy
+:type        ldx   ROWN
+             lda   LTYPE,x
+             ldx   #$12             ; column 18
+             jmp   TYPESTR
+
+*--------------------------------------
+* NAMEPTR -- NAMPTR = LNAMES + ROWN * 16
+*
+* The name block is 4K, so this cannot be an index register.
+*--------------------------------------
+NAMEPTR      lda   ROWN
+             sta   TMPA
+             lda   #$00
+             sta   TMPC
+             ldx   #$04
+:shift       asl   TMPA
+             rol   TMPC
+             dex
+             bne   :shift
+             lda   TMPA
+             clc
+             adc   #<LNAMES
+             sta   NAMPTR
+             lda   TMPC
+             adc   #>LNAMES
+             sta   NAMPTR+1
+             rts
+
+*--------------------------------------
+* TYPESTR -- A = ProDOS file type, X = column. Three characters into LINEBUF.
+*
+* A table of the types worth naming, and hex for everything else, which is
+* what a catalogue has always done with a type it does not recognise.
+*--------------------------------------
+TYPESTR      sta   TMPB
+             stx   TMPA
+             ldy   #$00
+:scan        cpy   #TYPLEN
+             bcs   :hex
+             lda   TYPTBL,y
+             cmp   TMPB
+             beq   :found
+             iny
+             iny
+             iny
+             iny
+             bne   :scan
+
+:found       ldx   TMPA
+             iny
+             lda   TYPTBL,y
+             sta   LINEBUF,x
+             inx
+             iny
+             lda   TYPTBL,y
+             sta   LINEBUF,x
+             inx
+             iny
+             lda   TYPTBL,y
+             sta   LINEBUF,x
+             rts
+
+:hex         ldx   TMPA
+             lda   #$a4             ; '$'
+             sta   LINEBUF,x
+             inx
+             lda   TMPB
+             lsr
+             lsr
+             lsr
+             lsr
+             jsr   HEXDIG
+             sta   LINEBUF,x
+             inx
+             lda   TMPB
+             and   #$0f
+             jsr   HEXDIG
+             sta   LINEBUF,x
+             rts
+
+*--- A = 0-15 -> the character for it, high ASCII
+HEXDIG       cmp   #$0a
+             bcc   :digit
+             clc
+             adc   #$b7             ; 'A' - 10
+             rts
+:digit       clc
+             adc   #$b0             ; '0'
+             rts
+
+TYPTBL       dfb   TYPVOL
+             asc   "VOL"
+             dfb   $04
+             asc   "TXT"
+             dfb   $06
+             asc   "BIN"
+             dfb   $0f
+             asc   "DIR"
+             dfb   $19
+             asc   "ADB"
+             dfb   $1a
+             asc   "AWP"
+             dfb   $1b
+             asc   "ASP"
+             dfb   $fc
+             asc   "BAS"
+             dfb   $fd
+             asc   "VAR"
+             dfb   $fe
+             asc   "REL"
+             dfb   $ff
+             asc   "SYS"
+TYPLEN       equ   *-TYPTBL
 
 *--------------------------------------
 * DRAWSTATUS / DRAWHINTS
@@ -165,32 +265,12 @@ DRAWHINTS    jsr   CLRBUF
              jmp   DRAWLINE
 
 *--------------------------------------
-* Fixed content, until there is a real catalogue to draw
+* What is on screen above the panels
 *--------------------------------------
-PATHL        asc   ">/WORK/DOCS"
+PATHL        asc   ">(volumes)"
              dfb   $00
-PATHR        asc   " /BACKUP"
+PATHR        asc   " "
              dfb   $00
-
-E1           asc   "> CHAPTER.ONE     TXT    14"
-             dfb   $00
-E2           asc   "  CHAPTER.TWO     TXT     9"
-             dfb   $00
-E3           asc   "> NOTES           TXT     3"
-             dfb   $00
-E4           asc   " *FILER.SYSTEM    SYS    21"
-             dfb   $00
-E5           asc   "  OLD             DIR     2"
-             dfb   $00
-E6           asc   "  ARCHIVE         DIR     4"
-             dfb   $00
-E7           asc   " *README          TXT     2"
-             dfb   $00
-
-LCOUNT       equ   5
-RCOUNT       equ   2
-ENTL         da    E1,E2,E3,E4,E5
-ENTR         da    E6,E7
 
 STATTXT      asc   "2 tagged, 17 blocks"
              dfb   $00
@@ -200,7 +280,11 @@ HINTTXT      asc   "TAB panel  SPC tag  RET open  C copy  R name  L ock  D el  S
 *--- mutable storage
              dum   $1400
 ROWN         ds    1                ; which panel row is being drawn
+LCOUNT       ds    1                ; entries the left panel has read
+IDX          ds    1                ; scratch counter
              dend
 
 *--- The display layer last: it emits code, and $2000 belongs to START.
              put   screen
+             put   prodos
+             put   catalog
