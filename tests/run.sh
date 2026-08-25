@@ -119,7 +119,11 @@ snapshot
 assert_row "the path is the volume"               0 "/FILER"
 assert_row "the editor's own SYS file is there"   2 "FILER.SYSTEM"
 assert_row "with its type"                        2 "SYS"
-assert_row "and its size in blocks"               2 "5"
+# derived from the image rather than written in, so it does not break every
+# time the program changes size -- and it checks the panel against ProDOS's
+# own accounting rather than against a number I typed
+sysblk=$("$ROOT/tools/ac" -l "$FIXTURE" | awk '/FILER.SYSTEM/ {print $3+0}')
+assert_row "and its size in blocks"               2 "$sysblk"
 assert_row "a subdirectory reads as DIR"          3 "DOCS"
 assert_row "ProDOS itself is listed"              6 "PRODOS"
 assert_row "with the blocks it really occupies"   6 "34"
@@ -180,6 +184,43 @@ k text "S"                             # swap
 snapshot
 assert_row "S exchanges them"                     0 "/FILER  "
 assert_row "the other way round"                  0 "/FILER/DOCS"
+fi
+
+#--------------------------------------
+# Tagging. A command acts on the tagged set if there is one and on the cursor
+# line if there is not, so there is never a mode to be in -- design.md §6.
+#--------------------------------------
+if section "tagging"; then
+reboot
+k key "down arrow"; k line ""          # into /FILER
+"$VII" settle 2 >/dev/null
+k text " "                             # tag FILER.SYSTEM, step down
+k text " "                             # tag DOCS, step down
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "the first is marked"                  2 "> FILER.SYSTEM"
+assert_row "and so is the second"                 3 "> DOCS"
+assert_norow "the one after is not"               4 ">"
+assert_row "the count is in the status row"      22 "2 tagged"
+assert_row "and the blocks they come to"         22 "blocks"
+
+# The blocks are the number worth knowing before a copy, so check the sum
+# rather than just its presence: FILER.SYSTEM plus a one-block directory.
+# cut to the left panel first: a row holds both, so the last field of the
+# whole line belongs to the other one
+blocks=$(sed -n '23p' "$SCREEN" | cut -c1-39 | sed 's/.*tagged, *//;s/ *blocks.*//')
+sysblk=$(sed -n '3p'  "$SCREEN" | cut -c1-39 | awk '{print $NF}')
+if [ "$blocks" = "$((sysblk + 1))" ]; then
+    ok "and the sum is right"
+else
+    bad "and the sum is right" "status says $blocks, entries say $sysblk + 1"
+fi
+
+k key "left arrow"                     # back out: a new listing
+"$VII" settle 2 >/dev/null
+snapshot
+assert_norow "tags go when the listing does"      2 ">"
+assert_row "and the status says so"              22 "entries"
 fi
 
 #--------------------------------------

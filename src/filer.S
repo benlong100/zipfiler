@@ -51,6 +51,8 @@ MAINLOOP     jsr   DRAWSCREEN
              beq   :tswap
              cmp   #$f3
              beq   :tswap
+             cmp   #$a0             ; SPACE: tag, and step down
+             beq   :ttag
              cmp   #$9b             ; ESC: back to ProDOS
              beq   :tquit
              jmp   :key
@@ -63,6 +65,7 @@ MAINLOOP     jsr   DRAWSCREEN
 :ttab        jmp   :tab
 :tswap       jmp   :swap
 :tquit       jmp   :quit
+:ttag        jmp   :tag
 
 :tab         lda   PANEL
              eor   #$01
@@ -173,6 +176,28 @@ MAINLOOP     jsr   DRAWSCREEN
              sta   PTOP
              sta   PTOP+1
              jmp   MAINLOOP
+
+*--- SPACE tags the entry and steps down, so tagging a run is tapping the
+*    space bar. At the end of the listing it tags and stays put.
+:tag         ldx   PANSEL
+             lda   PCOUNT,x
+             bne   *+5
+             jmp   :key
+             lda   PCURSEL,x
+             jsr   TAGTOG
+             ldx   PANSEL
+             lda   PCURSEL,x
+             clc
+             adc   #$01
+             cmp   PCOUNT,x
+             bcs   :tagged
+             sta   PCURSEL,x
+             sec
+             sbc   PTOP,x
+             cmp   #PANELROWS
+             bcc   :tagged
+             inc   PTOP,x
+:tagged      jmp   MAINLOOP
 
 QUITPARM     dfb   $04
              dfb   $00
@@ -379,8 +404,16 @@ FMTPANEL     lda   ENTI
              lda   TMPC
              jsr   TYPESTR
 
+*--- the tag column
+             lda   ENTI
+             jsr   TAGTST
+             beq   :lock
+             ldx   FCOL
+             lda   #$be             ; '>' -- this one is tagged
+             sta   LINEBUF,x
+
 *--- locked is the access byte's write-enable bit, clear
-             ldy   ENTI
+:lock        ldy   ENTI
              lda   (PACC),y
              and   #$02
              bne   :blocks
@@ -539,7 +572,39 @@ TYPLEN       equ   *-TYPTBL
 *--------------------------------------
 DRAWSTATUS   jsr   CLRBUF
              jsr   PANELBAR
-             ldx   PANEL            ; the focused panel is the one described
+             jsr   FOCUS            ; the focused panel is the one described
+             jsr   TAGSTATS
+             lda   NTAG
+             beq   :plain
+
+*--- "n tagged, m blocks". The blocks are the number worth knowing before a
+*    copy, which is why they are here and not the count alone.
+             lda   NTAG
+             sta   NUMLO
+             lda   #$00
+             sta   NUMHI
+             sta   TMPA
+             jsr   PUTNUM
+             lda   #<TAGTXT
+             ldy   #>TAGTXT
+             jsr   SETSTR
+             ldx   #$06
+             jsr   BUFSTR
+             lda   TBLKLO
+             sta   NUMLO
+             lda   TBLKHI
+             sta   NUMHI
+             lda   #$0e
+             sta   TMPA
+             jsr   PUTNUM
+             lda   #<BLKTXT
+             ldy   #>BLKTXT
+             jsr   SETSTR
+             ldx   #$14
+             jsr   BUFSTR
+             jmp   :draw
+
+:plain       ldx   PANEL
              lda   PCOUNT,x
              sta   NUMLO
              lda   #$00
@@ -551,7 +616,7 @@ DRAWSTATUS   jsr   CLRBUF
              jsr   SETSTR
              ldx   #$06
              jsr   BUFSTR
-             lda   #STATROW
+:draw        lda   #STATROW
              jmp   DRAWLINE
 
 DRAWHINTS    jsr   CLRBUF
@@ -568,7 +633,11 @@ VOLTXT       asc   "(volumes)"
              dfb   $00
 ENTTXT       asc   "entries"
              dfb   $00
-HINTTXT      asc   "ARROWS move   TAB panel   RET open   LEFT up   S wap   ESC quit"
+TAGTXT       asc   "tagged,"
+             dfb   $00
+BLKTXT       asc   "blocks"
+             dfb   $00
+HINTTXT      asc   "SPC tag   TAB panel   RET open   LEFT up   S wap   ESC quit"
              dfb   $00
 
 *--- mutable storage

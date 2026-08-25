@@ -49,12 +49,20 @@ SELPANEL     sta   PANSEL
              lda   PATHHI,x
              sta   OPENPARM+2
              sta   PATHPTR+1
+
+*--- and its tags
+             lda   TAGLO,x
+             sta   PTAGS
+             lda   TAGHI,x
+             sta   PTAGS+1
              rts
 
 PANBASE      dfb   <PAN0,<PAN1
              dfb   >PAN0,>PAN1
 PATHLO       dfb   <PATH0,<PATH1
 PATHHI       dfb   >PATH0,>PATH1
+TAGLO        dfb   <TAGS0,<TAGS1
+TAGHI        dfb   >TAGS0,>TAGS1
 
 *--------------------------------------
 * NAMEAT -- NAMPTR = the name of entry A in the chosen panel
@@ -86,7 +94,8 @@ NAMEAT       sta   TMPA
 * then the characters -- so pointing at both and using one index copies one
 * into the other with nothing to adjust.
 *--------------------------------------
-VOLSCAN      jsr   ONLINEF
+VOLSCAN      jsr   TAGNONE          ; tags belong to a listing, not to a panel
+             jsr   ONLINEF
              ldx   PANSEL
              lda   #$00
              sta   PCOUNT,x
@@ -145,7 +154,8 @@ VOLSCAN      jsr   ONLINEF
 *
 * Carry set and MLIERR meaningful if it could not be read.
 *--------------------------------------
-DIRSCAN      ldx   PANSEL
+DIRSCAN      jsr   TAGNONE          ; tags belong to a listing, not to a panel
+             ldx   PANSEL
              lda   #$00
              sta   PCOUNT,x
              jsr   OPENF
@@ -353,9 +363,88 @@ PTOP         ds    2                ; first entry visible in each
 PINVOL       ds    2                ; non-zero while showing the volume list
 IDX          ds    1
 ENTN         ds    1
+NTAG         ds    1                ; TAGSTATS: how many are tagged
+TBLKLO       ds    1                ; and the blocks they come to
+TBLKHI       ds    1
              dend
 
              dum   $1500
 PATH0        ds    65               ; length byte then up to 64 characters
 PATH1        ds    65
              dend
+
+*--------------------------------------
+* Tags
+*
+* One bit an entry. A command acts on the tagged set if there is one and on
+* the cursor line if there is not, which is what stops tagging being a mode
+* -- see design.md section 6.
+*--------------------------------------
+
+*--- TAGBIT -- A = entry. Y = which byte of the map, TMPB = which bit.
+TAGBIT       pha
+             lsr
+             lsr
+             lsr
+             tay
+             pla
+             and   #$07
+             tax
+             lda   BITS,x
+             sta   TMPB
+             rts
+
+BITS         dfb   $01,$02,$04,$08,$10,$20,$40,$80
+
+*--- TAGTOG -- turn entry A's tag over
+TAGTOG       jsr   TAGBIT
+             lda   (PTAGS),y
+             eor   TMPB
+             sta   (PTAGS),y
+             rts
+
+*--- TAGTST -- Z clear if entry A is tagged
+TAGTST       jsr   TAGBIT
+             lda   (PTAGS),y
+             and   TMPB
+             rts
+
+*--- TAGNONE -- clear every tag in the chosen panel. Tags belong to a listing,
+*    so they go when the listing does.
+TAGNONE      lda   #$00
+             ldy   #31
+:loop        sta   (PTAGS),y
+             dey
+             bpl   :loop
+             rts
+
+*--------------------------------------
+* TAGSTATS -- NTAG = how many are tagged, TBLK = the blocks they add up to
+*
+* The blocks matter more than the count: it is the number worth knowing
+* before a copy.
+*--------------------------------------
+TAGSTATS     lda   #$00
+             sta   NTAG
+             sta   TBLKLO
+             sta   TBLKHI
+             sta   IDX
+             ldx   PANSEL
+:each        lda   IDX
+             cmp   PCOUNT,x
+             bcs   :done
+             jsr   TAGTST
+             beq   :next
+             inc   NTAG
+             ldy   IDX
+             lda   TBLKLO
+             clc
+             adc   (PBLKLO),y
+             sta   TBLKLO
+             lda   TBLKHI
+             adc   (PBLKHI),y
+             sta   TBLKHI
+:next        inc   IDX
+             ldx   PANSEL
+             jmp   :each
+:done        rts

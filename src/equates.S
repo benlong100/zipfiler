@@ -42,6 +42,7 @@ PBLKHI       equ   $18
 PACC         equ   $1a
 PDST         equ   $1c              ; 2 bytes, where a path is being built
 PATHPTR      equ   $1e              ; 2 bytes, the chosen panel's path
+PTAGS        equ   $20              ; 2 bytes, the chosen panel's tag bitmap
 
 *--- The screen. Fixed at 80 columns: unlike the editor there is no 40 column
 *    machine to support, so the geometry is a set of equates rather than a
@@ -74,6 +75,10 @@ OFFTYPE      equ   $1000            ; from a panel's base
 OFFBLKLO     equ   $1100
 OFFBLKHI     equ   $1200
 OFFACC       equ   $1300
+
+*--- A tag is a bit, so a panel's worth is 32 bytes. See design.md section 6.
+TAGS0        equ   $1600
+TAGS1        equ   $1620
 
 *--- screen codes we draw chrome with ---
 CHDASH       equ   $ad              ; '-'

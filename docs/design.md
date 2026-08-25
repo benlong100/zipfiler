@@ -34,9 +34,9 @@ and a hint row.
 ```
 >/WORK/DOCS                            | /BACKUP
 ---------------------------------------+----------------------------------------
-» CHAPTER.ONE     TXT    14            |  ARCHIVE         DIR     4
+> CHAPTER.ONE     TXT    14            |  ARCHIVE         DIR     4
   CHAPTER.TWO     TXT     9            | *README          TXT     2
-» NOTES           TXT     3            |
+> NOTES           TXT     3            |
  *ZIPEDIT.SYSTEM  SYS    21            |
   OLD             DIR     2            |
 2 tagged, 17 blocks                    |
@@ -50,7 +50,8 @@ empty deliberately. There is room there for a modification date and it is not
 worth the space it would cost on screen or the four bytes an entry it would
 cost in memory.
 
-- `»` marks a tagged entry, `*` a locked one. The asterisk is the one `CATALOG`
+- `>` marks a tagged entry, `*` a locked one. (The sketch above said `»`; the
+  //e's character set has no such glyph and MouseText offers nothing closer.) The asterisk is the one `CATALOG`
   already puts against a locked file, so it needs no explaining.
 - `>` on the path row marks the panel with focus. The cursor line is drawn
   inverse.
