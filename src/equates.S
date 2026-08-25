@@ -29,8 +29,19 @@ TMPA         equ   $0a
 TMPB         equ   $0b
 NAMPTR       equ   $0c              ; 2 bytes, into the 4K name block
 TMPC         equ   $0e
+KEYCHR       equ   $0f              ; last key read
 ENTPTR       equ   $10              ; 2 bytes, walking a directory block
-KEYCHR       equ   $18              ; last key read
+
+*--- The arrays of whichever panel is being read or drawn. SELPANEL points
+*    them at one panel or the other, so every routine below can be written
+*    once and used by both.
+PNAMES       equ   $12              ; 2 bytes each
+PTYPE        equ   $14
+PBLKLO       equ   $16
+PBLKHI       equ   $18
+PACC         equ   $1a
+PDST         equ   $1c              ; 2 bytes, where a path is being built
+PATHPTR      equ   $1e              ; 2 bytes, the chosen panel's path
 
 *--- The screen. Fixed at 80 columns: unlike the editor there is no 40 column
 *    machine to support, so the geometry is a set of equates rather than a
@@ -52,6 +63,17 @@ HINTROW      equ   23
 *--- A volume is not a file and has no ProDOS file type. $00 is "typeless"
 *    and effectively unused by real files, so it serves as the marker.
 TYPVOL       equ   $00
+
+*--- Where each panel keeps what it has read. 5,120 bytes apiece: 4K of names
+*    at a 16-byte stride, then a 256-byte array for each of the other four
+*    things a listing shows. See docs/design.md section 4.
+PAN0         equ   $5000
+PAN1         equ   $6400
+PANSIZE      equ   $1400
+OFFTYPE      equ   $1000            ; from a panel's base
+OFFBLKLO     equ   $1100
+OFFBLKHI     equ   $1200
+OFFACC       equ   $1300
 
 *--- screen codes we draw chrome with ---
 CHDASH       equ   $ad              ; '-'

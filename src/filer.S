@@ -18,9 +18,16 @@
              put   equates
 
 *--------------------------------------
-* START
+* START -- both panels open on the list of volumes
 *--------------------------------------
 START        jsr   DISPINIT
+             lda   #$00
+             sta   PANEL
+             lda   #$01
+             jsr   SELPANEL
+             jsr   TOVOLUMES
+             lda   #$00
+             jsr   SELPANEL
              jsr   TOVOLUMES
 
 MAINLOOP     jsr   DRAWSCREEN
@@ -28,39 +35,66 @@ MAINLOOP     jsr   DRAWSCREEN
              bpl   :key
              sta   KEYCHR
              sta   KBDSTRB
+             jsr   FOCUS            ; every command acts on the focused panel
              lda   KEYCHR
              cmp   #$8b             ; up arrow
-             beq   :up
+             beq   :tup
              cmp   #$8a             ; down arrow
-             beq   :down
+             beq   :tdown
              cmp   #$8d             ; RET: go in
-             beq   :enter
-             cmp   #$88             ; left arrow: go up a level
-             beq   :parent
+             beq   :tenter
+             cmp   #$88             ; left arrow: up a level
+             beq   :tparent
+             cmp   #$89             ; TAB: the other panel
+             beq   :ttab
+             cmp   #$d3             ; S, either case: swap the panels
+             beq   :tswap
+             cmp   #$f3
+             beq   :tswap
              cmp   #$9b             ; ESC: back to ProDOS
-             beq   :quit
+             beq   :tquit
              jmp   :key
 
-:up          lda   CURSEL
-             beq   :key             ; already at the top
-             dec   CURSEL
-             lda   CURSEL
-             cmp   LTOP
-             bcs   MAINLOOP
-             dec   LTOP
+*--- the handlers are further off than a branch reaches
+:tup         jmp   :up
+:tdown       jmp   :down
+:tenter      jmp   :enter
+:tparent     jmp   :parent
+:ttab        jmp   :tab
+:tswap       jmp   :swap
+:tquit       jmp   :quit
+
+:tab         lda   PANEL
+             eor   #$01
+             sta   PANEL
              jmp   MAINLOOP
 
-:down        lda   CURSEL
+:up          ldx   PANSEL
+             lda   PCURSEL,x
+             bne   *+5              ; already at the top
+             jmp   :key
+             dec   PCURSEL,x
+             lda   PCURSEL,x
+             cmp   PTOP,x
+             bcc   *+5
+             jmp   MAINLOOP
+             dec   PTOP,x
+             jmp   MAINLOOP
+
+:down        ldx   PANSEL
+             lda   PCURSEL,x
              clc
              adc   #$01
-             cmp   LCOUNT
-             bcs   :key             ; already at the end
-             sta   CURSEL
+             cmp   PCOUNT,x
+             bcc   *+5              ; already at the end
+             jmp   :key
+             sta   PCURSEL,x
              sec
-             sbc   LTOP
+             sbc   PTOP,x
              cmp   #PANELROWS
-             bcc   MAINLOOP
-             inc   LTOP
+             bcs   *+5
+             jmp   MAINLOOP
+             inc   PTOP,x
              jmp   MAINLOOP
 
 :quit        jsr   MLI
@@ -70,43 +104,74 @@ MAINLOOP     jsr   DRAWSCREEN
 
 *--- RET. From the volume list that means entering a volume; from a directory
 *    it means entering a subdirectory, and nothing at all on a file.
-:enter       lda   LCOUNT
-             bne   *+5              ; nothing to enter
+:enter       ldx   PANSEL
+             lda   PCOUNT,x
+             bne   *+5
              jmp   :key
-             lda   INVOL
+             lda   PINVOL,x
              beq   :subdir
              jsr   PATHVOL
              jmp   :read
-:subdir      ldx   CURSEL
-             lda   LTYPE,x
+:subdir      ldy   PCURSEL,x
+             lda   (PTYPE),y
              cmp   #$0f             ; a directory, and only a directory
              beq   *+5
              jmp   :key
              jsr   PATHDOWN
 :read        jsr   DIRSCAN
-             bcs   :err
+             bcs   :fell
+             ldx   PANSEL
              lda   #$00
-             sta   INVOL
-             sta   CURSEL
-             sta   LTOP
+             sta   PINVOL,x
+             sta   PCURSEL,x
+             sta   PTOP,x
              jmp   MAINLOOP
-:err         jsr   TOVOLUMES        ; unreadable: fall back to the list
+:fell        jsr   TOVOLUMES        ; unreadable: fall back to the list
              jmp   MAINLOOP
 
 *--- Left arrow. Up out of a directory, and up out of a volume root is the
 *    list of volumes -- which is what makes the volume picker not a command.
-:parent      lda   INVOL
+:parent      ldx   PANSEL
+             lda   PINVOL,x
              beq   *+5              ; already as far out as there is
              jmp   :key
              jsr   PATHUP
-             bcs   :tovol           ; was a volume root
+             bcs   :fell
              jsr   DIRSCAN
-             bcs   :tovol
+             bcs   :fell
+             ldx   PANSEL
              lda   #$00
-             sta   CURSEL
-             sta   LTOP
+             sta   PCURSEL,x
+             sta   PTOP,x
              jmp   MAINLOOP
-:tovol       jsr   TOVOLUMES
+
+*--- S. Exchange the two panels, which is how anything is copied right to
+*    left: the direction of a copy is fixed, so the panels move instead.
+:swap        ldy   #$00
+:sw          lda   PATH0,y
+             tax
+             lda   PATH1,y
+             sta   PATH0,y
+             txa
+             sta   PATH1,y
+             iny
+             cpy   #65
+             bcc   :sw
+             lda   PINVOL
+             ldx   PINVOL+1
+             sta   PINVOL+1
+             stx   PINVOL
+             lda   #$00
+             jsr   SELPANEL
+             jsr   RESCAN
+             lda   #$01
+             jsr   SELPANEL
+             jsr   RESCAN
+             lda   #$00
+             sta   PCURSEL
+             sta   PCURSEL+1
+             sta   PTOP
+             sta   PTOP+1
              jmp   MAINLOOP
 
 QUITPARM     dfb   $04
@@ -116,15 +181,31 @@ QUITPARM     dfb   $04
              da    $0000
 
 *--------------------------------------
-* TOVOLUMES -- show the list of online volumes
+* TOVOLUMES -- the chosen panel shows the list of online volumes
 *--------------------------------------
 TOVOLUMES    jsr   VOLSCAN
+             ldx   PANSEL
              lda   #$01
-             sta   INVOL
+             sta   PINVOL,x
              lda   #$00
-             sta   CURSEL
-             sta   LTOP
+             sta   PCURSEL,x
+             sta   PTOP,x
              rts
+
+*--------------------------------------
+* FOCUS -- point the working pointers at the panel that has focus
+*--------------------------------------
+FOCUS        lda   PANEL
+             jmp   SELPANEL
+
+*--------------------------------------
+* RESCAN -- read the chosen panel again, whichever listing it is showing
+*--------------------------------------
+RESCAN       ldx   PANSEL
+             lda   PINVOL,x
+             beq   :dir
+             jmp   VOLSCAN
+:dir         jmp   DIRSCAN
 
 *--------------------------------------
 * DRAWSCREEN -- the whole layout
@@ -134,41 +215,64 @@ DRAWSCREEN   jsr   DRAWPATHS
              jsr   DRAWENTRIES
              jsr   DRAWSTATUS
              jsr   DRAWHINTS
-             rts
+             jmp   FOCUS            ; leave the pointers where the keys expect
 
 *--------------------------------------
 * DRAWPATHS -- where each panel is, the focused one marked
 *--------------------------------------
 DRAWPATHS    jsr   CLRBUF
              jsr   PANELBAR
+             lda   #$00
+             jsr   SELPANEL
+             lda   #$00
+             sta   FCOL
+             lda   #LWIDTH
+             sta   FWIDTH
+             jsr   ONEPATH
+             lda   #$01
+             jsr   SELPANEL
+             lda   #RCOL
+             sta   FCOL
+             lda   #RWIDTH
+             sta   FWIDTH
+             jsr   ONEPATH
+             lda   #PATHROW
+             jmp   DRAWLINE
+
+ONEPATH      lda   FCOL
+             clc
+             adc   FWIDTH
+             sta   TMPC             ; one past this panel's last column
+             ldx   FCOL
+             lda   PANSEL
+             cmp   PANEL
+             bne   :nomark
              lda   #$be             ; '>' marks the panel with focus
-             sta   LINEBUF
-             lda   INVOL
+             sta   LINEBUF,x
+:nomark      inx
+             ldy   PANSEL
+             lda   PINVOL,y
              beq   :path
              lda   #<VOLTXT
              ldy   #>VOLTXT
              jsr   SETSTR
-             ldx   #$01
-             jsr   BUFSTR
-             jmp   :draw
-*--- the length is the INDEX of the last character, not one past it, so the
-*    test belongs after the copy or the last letter goes missing
-:path        lda   PATHBUF
-             beq   :draw
-             ldx   #$01
+             jmp   BUFSTR
+:path        ldy   #$00
+             lda   (PATHPTR),y
+             beq   :done
+             sta   TMPB
              ldy   #$01
-:copy        lda   PATHBUF,y
+:copy        lda   (PATHPTR),y
              ora   #$80
              sta   LINEBUF,x
              inx
-             cpx   #LWIDTH
-             bcs   :draw
+             cpx   TMPC
+             bcs   :done            ; clipped at this panel's edge
+             cpy   TMPB
+             bcs   :done
              iny
-             cpy   PATHBUF
-             bcc   :copy
-             beq   :copy
-:draw        lda   #PATHROW
-             jmp   DRAWLINE
+             bne   :copy
+:done        rts
 
 *--------------------------------------
 * DRAWRULE -- dashes across, with the divider crossing them
@@ -193,24 +297,27 @@ PANELBAR     lda   #CHBAR
              rts
 
 *--------------------------------------
-* DRAWENTRIES -- the panel rows, from what the panel has read
+* DRAWENTRIES -- one row of both panels at a time
 *--------------------------------------
 DRAWENTRIES  lda   #$00
              sta   ROWN
 :row         jsr   CLRBUF
              jsr   PANELBAR
-             lda   LTOP
-             clc
-             adc   ROWN
-             sta   ENTI
-             cmp   LCOUNT
-             bcs   :put             ; past the end: leave the row blank
-             jsr   FMTLEFT
-             lda   ENTI
-             cmp   CURSEL
-             bne   :put
-             jsr   INVLEFT          ; the cursor line
-:put         lda   ROWN
+             lda   #$00
+             jsr   SELPANEL
+             lda   #$00
+             sta   FCOL
+             lda   #LWIDTH
+             sta   FWIDTH
+             jsr   ONEENTRY
+             lda   #$01
+             jsr   SELPANEL
+             lda   #RCOL
+             sta   FCOL
+             lda   #RWIDTH
+             sta   FWIDTH
+             jsr   ONEENTRY
+             lda   ROWN
              clc
              adc   #TOPROW
              jsr   DRAWLINE
@@ -220,73 +327,84 @@ DRAWENTRIES  lda   #$00
              bcc   :row
              rts
 
+ONEENTRY     ldx   PANSEL
+             lda   PTOP,x
+             clc
+             adc   ROWN
+             sta   ENTI
+             cmp   PCOUNT,x
+             bcs   :none            ; past the end: leave the row blank
+             jsr   FMTPANEL
+             lda   PANSEL           ; only the focused panel shows a cursor
+             cmp   PANEL
+             bne   :none
+             ldx   PANSEL
+             lda   ENTI
+             cmp   PCURSEL,x
+             bne   :none
+             jsr   INVPANEL
+:none        rts
+
 *--------------------------------------
-* FMTLEFT -- entry ENTI into LINEBUF
+* FMTPANEL -- entry ENTI of the chosen panel into LINEBUF
 *
-* The columns docs/design.md counted: 0 tag, 1 lock, 2-16 name, 18-20 type,
-* 22-26 blocks.
+* The columns docs/design.md counted, offset by where the panel starts:
+* 0 tag, 1 lock, 2-16 name, 18-20 type, 22-26 blocks.
 *--------------------------------------
-FMTLEFT      jsr   ENTPTRN
+FMTPANEL     lda   ENTI
+             jsr   NAMEAT
              ldy   #$00
              lda   (NAMPTR),y
              sta   TMPB
              beq   :type
-             ldx   #$02
+             lda   FCOL
+             clc
+             adc   #$02
+             tax
 :copy        iny
              lda   (NAMPTR),y
              ora   #$80             ; held low ASCII, drawn high
              sta   LINEBUF,x
              inx
-             dec   TMPB
-             bne   :copy
+             cpy   TMPB
+             bcc   :copy
 
-:type        ldx   ENTI
-             lda   LTYPE,x
-             ldx   #$12
+:type        ldy   ENTI
+             lda   (PTYPE),y
+             sta   TMPC
+             lda   FCOL
+             clc
+             adc   #$12
+             tax
+             lda   TMPC
              jsr   TYPESTR
 
-*--- locked is the write-enable bit of the access byte, clear
-             ldx   ENTI
-             lda   LACCESS,x
+*--- locked is the access byte's write-enable bit, clear
+             ldy   ENTI
+             lda   (PACC),y
              and   #$02
              bne   :blocks
+             lda   FCOL
+             clc
+             adc   #$01
+             tax
              lda   #$aa             ; '*', the same mark CATALOG uses
-             sta   LINEBUF+1
+             sta   LINEBUF,x
 
-:blocks      lda   INVOL
-             bne   :done            ; a volume's size is not in this list
-             ldx   ENTI
-             lda   LBLKLO,x
+:blocks      ldx   PANSEL
+             lda   PINVOL,x
+             bne   :done            ; a volume has no size in this listing
+             ldy   ENTI
+             lda   (PBLKLO),y
              sta   NUMLO
-             lda   LBLKHI,x
+             lda   (PBLKHI),y
              sta   NUMHI
-             lda   #$16             ; column 22
+             lda   FCOL
+             clc
+             adc   #$16
              sta   TMPA
              jsr   PUTNUM
 :done        rts
-
-*--------------------------------------
-* ENTPTRN -- NAMPTR = the name of entry ENTI
-*
-* The name block is 4K, so this cannot be an index register.
-*--------------------------------------
-ENTPTRN      lda   ENTI
-             sta   TMPA
-             lda   #$00
-             sta   TMPC
-             ldx   #$04
-:shift       asl   TMPA
-             rol   TMPC
-             dex
-             bne   :shift
-             lda   TMPA
-             clc
-             adc   #<LNAMES
-             sta   NAMPTR
-             lda   TMPC
-             adc   #>LNAMES
-             sta   NAMPTR+1
-             rts
 
 *--------------------------------------
 * PUTNUM -- NUMLO/NUMHI right aligned in five columns from TMPA
@@ -421,7 +539,8 @@ TYPLEN       equ   *-TYPTBL
 *--------------------------------------
 DRAWSTATUS   jsr   CLRBUF
              jsr   PANELBAR
-             lda   LCOUNT
+             ldx   PANEL            ; the focused panel is the one described
+             lda   PCOUNT,x
              sta   NUMLO
              lda   #$00
              sta   NUMHI
@@ -439,7 +558,7 @@ DRAWHINTS    jsr   CLRBUF
              lda   #<HINTTXT
              ldy   #>HINTTXT
              jsr   SETSTR
-             ldx   #$05
+             jsr   CENTRE
              jsr   BUFSTR
              jsr   INVBUF           ; the hint row is chrome, so inverse
              lda   #HINTROW
@@ -449,19 +568,16 @@ VOLTXT       asc   "(volumes)"
              dfb   $00
 ENTTXT       asc   "entries"
              dfb   $00
-HINTTXT      asc   "ARROWS move   RET open   LEFT up a level   ESC quit"
+HINTTXT      asc   "ARROWS move   TAB panel   RET open   LEFT up   S wap   ESC quit"
              dfb   $00
 
 *--- mutable storage
              dum   $1400
 ROWN         ds    1                ; which panel row is being drawn
-LCOUNT       ds    1                ; entries the left panel has read
-IDX          ds    1                ; scratch counter
-CURSEL       ds    1                ; the entry the cursor is on
 ENTI         ds    1                ; the entry being drawn
-LTOP         ds    1                ; first entry visible
-ENTN         ds    1                ; entries left in this directory block
-INVOL        ds    1                ; non-zero when showing the volume list
+FCOL         ds    1                ; the column that panel starts at
+FWIDTH       ds    1                ; and how wide it is
+PANEL        ds    1                ; which panel has focus
 NUMLO        ds    1                ; PUTNUM's value
 NUMHI        ds    1
 DIG          ds    1

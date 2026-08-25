@@ -142,18 +142,42 @@ INVBUF       ldy   #SCRWM1
              rts
 
 *--------------------------------------
-* INVLEFT -- turn the left panel's columns of LINEBUF inverse
+* CENTRE -- X = the column at which the string at STRPTR is centred
+*
+* Measure the string and halve what is left, rather than hand-counting a
+* column into the source: the text can then change without the number under
+* it having to.
 *--------------------------------------
-INVLEFT      ldy   #LWIDTH-1
-:loop        lda   LINEBUF,y
-             bpl   :raw
+CENTRE       ldy   #$00
+:count       lda   (STRPTR),y
+             beq   :mid
+             iny
+             bne   :count
+:mid         tya
+             sta   TMPB
+             lda   #SCRW
+             sec
+             sbc   TMPB
+             lsr                    ; half of what is left, rounding down
+             tax
+             rts
+
+*--------------------------------------
+* INVPANEL -- turn one panel's columns of LINEBUF inverse
+*   FCOL = where it starts, FWIDTH = how many
+*--------------------------------------
+INVPANEL     ldx   FCOL
+             ldy   FWIDTH
+:loop        lda   LINEBUF,x
+             bpl   :raw             ; MouseText: leave it alone
              and   #$7f
              cmp   #$60
-             bcs   :keep
+             bcs   :keep            ; inverse lowercase is itself
              and   #$3f
-:keep        sta   LINEBUF,y
-:raw         dey
-             bpl   :loop
+:keep        sta   LINEBUF,x
+:raw         inx
+             dey
+             bne   :loop
              rts
 
 *--------------------------------------

@@ -3,123 +3,63 @@
 *
 * Parallel arrays rather than records: names in a block of 16-byte stride,
 * everything else in an array of its own. Indexing a 16-byte stride is a
-* shift rather than a multiply, a tag costs a bit rather than a byte, and
-* nothing is padded. See docs/design.md section 4.
+* shift rather than a multiply, and nothing is padded. See design.md §4.
 *
 * Names are held as ProDOS gives them -- plain, low ASCII -- because that is
-* what has to go back into a pathname. Bit 7 is set on the way to the screen.
-*--------------------------------------
-MAXENT       equ   255              ; per panel, and a count that fits a byte;
-*                                     a floppy cannot come close to it anyway
-
-*--------------------------------------
-* VOLSCAN -- fill the left panel from the list of online volumes
+* what has to go back into a pathname. Bit 7 goes on at the screen.
 *
-* The volume list is what "up from the root" reaches, so it is a listing like
-* any other and goes in the same arrays.
+* Every routine here works on whichever panel SELPANEL last chose, so none of
+* it is written twice.
 *--------------------------------------
-VOLSCAN      jsr   ONLINEF
-             lda   #$00
-             sta   LCOUNT
-             sta   IDX
-:each        lda   IDX
-             asl                    ; entry = IDX * 16
-             asl
-             asl
-             asl
-             tay
-             lda   ONLBUF,y
-             and   #$0f             ; name length; zero means an unreadable
-             beq   :next            ; device, which we simply do not list
-             sta   TMPB             ; how many characters to copy
+MAXENT       equ   255              ; per panel, and a count that fits a byte
 
-*--- the name goes at LNAMES + count*16, length first
-             lda   LCOUNT
-             asl
-             asl
-             asl
-             asl
+*--------------------------------------
+* SELPANEL -- A = 0 or 1. Point the working pointers at that panel.
+*
+* Also aims the MLI open at that panel's pathname, so a scan reads the path
+* belonging to the panel it is filling.
+*--------------------------------------
+SELPANEL     sta   PANSEL
              tax
-             lda   TMPB
-             sta   LNAMES,x
-             inx
-             iny                    ; ONLBUF entry byte 1 is the first letter
-:copy        lda   ONLBUF,y
-             sta   LNAMES,x
-             inx
-             iny
-             dec   TMPB
-             bne   :copy
-
-*--- a volume has no file type and no block count of its own here
-             ldx   LCOUNT
-             lda   #TYPVOL
-             sta   LTYPE,x
-             inc   LCOUNT
-
-:next        inc   IDX
-             lda   IDX
-             cmp   #16
-             bcc   :each
-             rts
-
-*--------------------------------------
-* The arrays. Declared, not emitted.
-*--------------------------------------
-             dum   $5000
-LNAMES       ds    4096             ; 256 * 16: length byte then 15 characters
-LTYPE        ds    256              ; ProDOS file type, or TYPVOL
-LBLKLO       ds    256              ; blocks used
-LBLKHI       ds    256
-LACCESS      ds    256              ; bit 1 clear means locked
-             dend
-
-*--------------------------------------
-* PATHVOL -- PATHBUF = "/" + the name of entry CURSEL
-*--------------------------------------
-PATHVOL      jsr   SELPTR
-             ldy   #$00
-             lda   (NAMPTR),y
-             sta   TMPB             ; the name length
+             lda   PANBASE,x
+             sta   PNAMES
+             sta   PTYPE
+             sta   PBLKLO
+             sta   PBLKHI
+             sta   PACC
+             lda   PANBASE+2,x
+             sta   PNAMES+1
              clc
-             adc   #$01             ; and the slash
-             sta   PATHBUF
-             lda   #$2f             ; '/', low ASCII: a pathname is not screen
-             sta   PATHBUF+1
-             ldx   #$02
-:copy        iny
-             lda   (NAMPTR),y
-             sta   PATHBUF,x
-             inx
-             dec   TMPB
-             bne   :copy
+             adc   #>OFFTYPE
+             sta   PTYPE+1
+             clc
+             adc   #$01
+             sta   PBLKLO+1
+             clc
+             adc   #$01
+             sta   PBLKHI+1
+             clc
+             adc   #$01
+             sta   PACC+1
+
+*--- and the path this panel is showing
+             lda   PATHLO,x
+             sta   OPENPARM+1
+             sta   PATHPTR
+             lda   PATHHI,x
+             sta   OPENPARM+2
+             sta   PATHPTR+1
              rts
 
-*--------------------------------------
-* PATHDOWN -- append "/" + entry CURSEL to PATHBUF
-*--------------------------------------
-PATHDOWN     jsr   SELPTR
-             ldx   PATHBUF          ; where the existing path ends
-             inx
-             lda   #$2f             ; '/'
-             sta   PATHBUF,x
-             ldy   #$00
-             lda   (NAMPTR),y
-             sta   TMPB
-:copy        inx
-             iny
-             lda   (NAMPTR),y
-             sta   PATHBUF,x
-             dec   TMPB
-             bne   :copy
-             stx   PATHBUF          ; the new length
-             rts
+PANBASE      dfb   <PAN0,<PAN1
+             dfb   >PAN0,>PAN1
+PATHLO       dfb   <PATH0,<PATH1
+PATHHI       dfb   >PATH0,>PATH1
 
 *--------------------------------------
-* SELPTR -- NAMPTR = the name of entry CURSEL
+* NAMEAT -- NAMPTR = the name of entry A in the chosen panel
 *--------------------------------------
-SELPTR       lda   CURSEL
-             sta   TMPA
+NAMEAT       sta   TMPA
              lda   #$00
              sta   TMPC
              ldx   #$04
@@ -129,20 +69,85 @@ SELPTR       lda   CURSEL
              bne   :shift
              lda   TMPA
              clc
-             adc   #<LNAMES
+             adc   PNAMES
              sta   NAMPTR
              lda   TMPC
-             adc   #>LNAMES
+             adc   PNAMES+1
              sta   NAMPTR+1
              rts
 
 *--------------------------------------
-* DIRSCAN -- read the directory named by PATHBUF into the arrays
+* VOLSCAN -- fill the chosen panel from the list of online volumes
+*
+* The volume list is what "up from a root" reaches, so it is a listing like
+* any other and goes in the same arrays.
+*
+* An ONLBUF answer and a cached name have the same shape -- a length byte
+* then the characters -- so pointing at both and using one index copies one
+* into the other with nothing to adjust.
+*--------------------------------------
+VOLSCAN      jsr   ONLINEF
+             ldx   PANSEL
+             lda   #$00
+             sta   PCOUNT,x
+             sta   IDX
+
+:each        lda   IDX
+             asl                    ; each answer is sixteen bytes
+             asl
+             asl
+             asl
+             clc
+             adc   #<ONLBUF
+             sta   ENTPTR
+             lda   #>ONLBUF
+             adc   #$00
+             sta   ENTPTR+1
+
+             ldy   #$00
+             lda   (ENTPTR),y
+             and   #$0f             ; the name length; zero is a device that
+             beq   :next            ; could not be read, so it is not listed
+             sta   TMPB
+
+             ldx   PANSEL
+             lda   PCOUNT,x
+             jsr   NAMEAT
+             lda   TMPB
+             ldy   #$00
+             sta   (NAMPTR),y
+:copy        iny
+             lda   (ENTPTR),y
+             sta   (NAMPTR),y
+             cpy   TMPB
+             bcc   :copy
+
+*--- a volume is not a file: no type of its own, and nothing to unlock
+             ldx   PANSEL
+             ldy   PCOUNT,x
+             lda   #TYPVOL
+             sta   (PTYPE),y
+             lda   #$02             ; write-enable set, so it draws unlocked
+             sta   (PACC),y
+             lda   #$00
+             sta   (PBLKLO),y
+             sta   (PBLKHI),y
+             inc   PCOUNT,x
+
+:next        inc   IDX
+             lda   IDX
+             cmp   #16
+             bcc   :each
+             rts
+
+*--------------------------------------
+* DIRSCAN -- read the directory named by the chosen panel's path
 *
 * Carry set and MLIERR meaningful if it could not be read.
 *--------------------------------------
-DIRSCAN      lda   #$00
-             sta   LCOUNT
+DIRSCAN      ldx   PANSEL
+             lda   #$00
+             sta   PCOUNT,x
              jsr   OPENF
              bcs   :fail
              lda   OPENREF
@@ -150,8 +155,8 @@ DIRSCAN      lda   #$00
              sta   CLOSEREF
 
 :block       jsr   READF
-             bcs   :done            ; end of file is an error code, and means
-             lda   XFERCNT          ; simply that there are no more blocks
+             bcs   :done            ; end of file arrives as an error, and
+             lda   XFERCNT          ; means only that there are no more
              ora   XFERCNT+1
              beq   :done
 
@@ -165,7 +170,7 @@ DIRSCAN      lda   #$00
 
 :entry       ldy   #$00
              lda   (ENTPTR),y
-             beq   :next            ; never used, or deleted
+             beq   :next            ; never used, or since deleted
              lsr
              lsr
              lsr
@@ -173,13 +178,14 @@ DIRSCAN      lda   #$00
              cmp   #$0e
              bcs   :next            ; $E and $F are the directory's own header
              jsr   TAKEENT
-             lda   LCOUNT
+             ldx   PANSEL
+             lda   PCOUNT,x
              cmp   #MAXENT
              bcs   :shut            ; the cap in design.md section 4
 
-:next        lda   ENTPTR           ; on to the next entry
+:next        lda   ENTPTR
              clc
-             adc   #$27             ; thirty-nine bytes
+             adc   #$27             ; thirty-nine bytes on
              sta   ENTPTR
              bcc   :n2
              inc   ENTPTR+1
@@ -197,24 +203,11 @@ DIRSCAN      lda   #$00
              rts
 
 *--------------------------------------
-* TAKEENT -- copy the entry at ENTPTR into the arrays at LCOUNT
+* TAKEENT -- the entry at ENTPTR into the arrays, at the panel's count
 *--------------------------------------
-TAKEENT      lda   LCOUNT
-             sta   TMPA
-             lda   #$00
-             sta   TMPC
-             ldx   #$04
-:shift       asl   TMPA
-             rol   TMPC
-             dex
-             bne   :shift
-             lda   TMPA
-             clc
-             adc   #<LNAMES
-             sta   NAMPTR
-             lda   TMPC
-             adc   #>LNAMES
-             sta   NAMPTR+1
+TAKEENT      ldx   PANSEL
+             lda   PCOUNT,x
+             jsr   NAMEAT
 
 *--- the name, length first
              ldy   #$00
@@ -225,35 +218,115 @@ TAKEENT      lda   LCOUNT
 :copy        iny
              lda   (ENTPTR),y
              sta   (NAMPTR),y
-             dec   TMPB
-             bne   :copy
+             cpy   TMPB
+             bcc   :copy
 
-*--- and the three things the listing shows
-             ldx   LCOUNT
-             ldy   #$10             ; file type
+*--- and the three other things a listing shows
+             ldx   PANSEL
+             ldy   PCOUNT,x
+             lda   #$10             ; file type
+             sta   TMPA
+             jsr   ENTBYTE
+             sta   (PTYPE),y
+             lda   #$13             ; blocks used, low
+             sta   TMPA
+             jsr   ENTBYTE
+             sta   (PBLKLO),y
+             lda   #$14
+             sta   TMPA
+             jsr   ENTBYTE
+             sta   (PBLKHI),y
+             lda   #$1e             ; access; bit 1 is write-enable
+             sta   TMPA
+             jsr   ENTBYTE
+             sta   (PACC),y
+             ldx   PANSEL
+             inc   PCOUNT,x
+             rts
+
+*--- A = the byte at offset TMPA of the entry, Y preserved
+ENTBYTE      sty   TMPC
+             ldy   TMPA
              lda   (ENTPTR),y
-             sta   LTYPE,x
-             ldy   #$13             ; blocks used, two bytes
-             lda   (ENTPTR),y
-             sta   LBLKLO,x
-             iny
-             lda   (ENTPTR),y
-             sta   LBLKHI,x
-             ldy   #$1e             ; the access byte; bit 1 is write-enable
-             lda   (ENTPTR),y
-             sta   LACCESS,x
-             inc   LCOUNT
+             ldy   TMPC
              rts
 
 *--------------------------------------
-* PATHUP -- drop the last component of PATHBUF
+* Building a path
+*
+* A path is a length byte, then the characters, low ASCII. A name is a length
+* byte then the characters too -- so aiming the destination pointer one byte
+* before where the name is to land lets one index walk both.
+*--------------------------------------
+
+*--- PATHVOL -- the panel's path = "/" + the name under its cursor
+PATHVOL      ldx   PANSEL
+             lda   PCURSEL,x
+             jsr   NAMEAT
+             lda   PATHPTR          ; the slash sits at path[1], so the name
+             clc                    ; starts at path[2] == (PDST),1
+             adc   #$01
+             sta   PDST
+             lda   PATHPTR+1
+             adc   #$00
+             sta   PDST+1
+             jsr   APPNAME
+             lda   TMPB
+             clc
+             adc   #$01             ; the name and the slash
+             ldy   #$00
+             sta   (PATHPTR),y
+             rts
+
+*--- PATHDOWN -- append "/" and the name under the cursor
+PATHDOWN     ldx   PANSEL
+             lda   PCURSEL,x
+             jsr   NAMEAT
+             ldy   #$00
+             lda   (PATHPTR),y      ; what is already there
+             sta   TMPA
+             clc
+             adc   PATHPTR
+             sta   PDST
+             lda   PATHPTR+1
+             adc   #$00
+             sta   PDST+1
+             inc   PDST             ; the slash goes one past the end
+             bne   :go
+             inc   PDST+1
+:go          jsr   APPNAME
+             lda   TMPA
+             sec                    ; the old length, the name, and the slash
+             adc   TMPB
+             ldy   #$00
+             sta   (PATHPTR),y
+             rts
+
+*--- APPNAME -- "/" at (PDST),0 and the name from NAMPTR after it. TMPB = the
+*    name length on return.
+APPNAME      ldy   #$00
+             lda   (NAMPTR),y
+             sta   TMPB
+             lda   #$2f             ; '/', low ASCII: a path is not screen
+             sta   (PDST),y
+:copy        iny
+             lda   (NAMPTR),y
+             sta   (PDST),y
+             cpy   TMPB
+             bcc   :copy
+             rts
+
+*--------------------------------------
+* PATHUP -- drop the last component of the panel's path
 *
 * Carry set if there was nothing left to drop, which means the path was a
 * volume root: above that is the list of volumes, and the caller goes there.
 *--------------------------------------
-PATHUP       ldy   PATHBUF
+PATHUP       ldy   #$00
+             lda   (PATHPTR),y
              beq   :top
-:scan        lda   PATHBUF,y
+             tay
+:scan        lda   (PATHPTR),y
              cmp   #$2f             ; '/'
              beq   :found
              dey
@@ -263,6 +336,26 @@ PATHUP       ldy   PATHBUF
 :found       cpy   #$01
              beq   :top             ; "/VOLUME" -- above it is the volume list
              dey
-             sty   PATHBUF
+             tya
+             ldy   #$00
+             sta   (PATHPTR),y
              clc
              rts
+
+*--------------------------------------
+* Per-panel state. The arrays themselves are at PAN0 and PAN1.
+*--------------------------------------
+             dum   $1480
+PANSEL       ds    1                ; the panel SELPANEL last chose
+PCOUNT       ds    2                ; entries read, per panel
+PCURSEL      ds    2                ; where each cursor is
+PTOP         ds    2                ; first entry visible in each
+PINVOL       ds    2                ; non-zero while showing the volume list
+IDX          ds    1
+ENTN         ds    1
+             dend
+
+             dum   $1500
+PATH0        ds    65               ; length byte then up to 64 characters
+PATH1        ds    65
+             dend
