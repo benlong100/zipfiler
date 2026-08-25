@@ -209,6 +209,18 @@ until a directory will not read.
 **Delete refuses a locked file** and says so, rather than quietly unlocking it.
 The lock is the writer's stated intent and `L` is one key away.
 
+**As built: `D`.** It asks first -- it is the one command with nothing behind
+it -- and a locked file is counted and named rather than treated as a failure.
+A refusal by ProDOS and a lock the writer set are different things and are
+reported differently: the error code is kept at the point of failure, because
+the rescan that follows makes its own MLI calls and `MLIERR` would be theirs
+by the time anyone looked.
+
+**A non-empty directory is refused by ProDOS itself** -- verified on the
+machine, error `$4E` -- so the program does not need its own guard, and says
+"a directory has to be empty first" rather than showing a hex code. The block
+compare confirms nothing at all was written.
+
 **Copying a directory** must refuse clearly until §11 is built. Directories
 appear in the listing because they have to be navigable, so they can be tagged,
 so somebody will try.
@@ -284,6 +296,11 @@ purpose is destructive operations on somebody's disks.
 - **Fixture images built from the Mac**, with known contents, and compared
   block by block after every operation. AppleCommander does both halves.
 - **Never point the suite at a real card, and never at the boot volume.**
+- **Eject before rebuilding the fixture.** Virtual ][ buffers writes to a
+  mounted image and flushes them when it is ejected, so rebuilding the file
+  while the emulator still holds the old one means the next boot's eject
+  writes stale blocks over the fresh one. It showed up as two blocks changing
+  during a section that does not write at all.
 - Assert against emulated RAM rather than the screen wherever possible, which
   is the habit `vii.sh dump` exists to support.
 - Build the fixture-and-compare scaffolding **before** the first `DESTROY`

@@ -59,6 +59,10 @@ MAINLOOP     jsr   DRAWSCREEN
              beq   :tlock
              cmp   #$d2             ; R, either case: rename
              beq   :tren
+             cmp   #$c4             ; D, either case: delete
+             beq   :tdel
+             cmp   #$e4
+             beq   :tdel
              cmp   #$f2
              beq   :tren
              cmp   #$ec
@@ -78,6 +82,7 @@ MAINLOOP     jsr   DRAWSCREEN
 :ttag        jmp   :tag
 :tlock       jmp   :lock
 :tren        jmp   :rename
+:tdel        jmp   :delete
 
 :tab         lda   PANEL
              eor   #$01
@@ -245,6 +250,22 @@ MAINLOOP     jsr   DRAWSCREEN
              jsr   SAYTEXT
              jmp   MAINLOOP
 
+*--- D. The one command with nothing behind it, so it asks first.
+:delete      ldx   PANSEL
+             lda   PINVOL,x
+             beq   *+5
+             jmp   :delvol          ; a volume is not deleted from a listing
+             ldx   PANSEL
+             lda   PCOUNT,x
+             bne   *+5
+             jmp   :key
+             jsr   DELCMD
+             jmp   MAINLOOP
+:delvol      lda   #<MDELVOL
+             ldy   #>MDELVOL
+             jsr   SAYTEXT
+             jmp   MAINLOOP
+
 QUITPARM     dfb   $04
              dfb   $00
              da    $0000
@@ -405,6 +426,171 @@ RENCMD       ldx   PANSEL
              lda   #<MRENERR
              ldy   #>MRENERR
              jmp   SAYMSG
+
+*--------------------------------------
+* DELCMD -- delete what the command applies to
+*
+* A locked file is not deleted and is not treated as a failure: the lock is
+* the writer's stated intent and L is one key away. It is counted and said
+* out loud instead -- design.md section 7.
+*--------------------------------------
+DELCMD       jsr   TGTINIT
+             lda   #$00
+             sta   NDONE            ; how many CAN go
+             sta   NSKIP
+:count       jsr   TGTNEXT
+             bcs   :ask
+             ldy   TGTI
+             lda   (PACC),y
+             and   #$02             ; write-enable: clear means locked
+             bne   :countable
+             inc   NSKIP
+             jmp   :count
+:countable   inc   NDONE
+             jmp   :count
+
+:ask         lda   NDONE
+             bne   :confirm
+             lda   NSKIP            ; everything it applies to is locked
+             sta   MSGN
+             lda   #<MALLLOCK
+             ldy   #>MALLLOCK
+             jmp   SAYMSG
+
+:confirm     lda   NDONE
+             sta   MSGN
+             lda   #<MASKDEL
+             ldy   #>MASKDEL
+             jsr   CONFIRM
+             bcc   :go
+             lda   #<MKEPT
+             ldy   #>MKEPT
+             jmp   SAYTEXT
+
+*--- and now it is irreversible
+:go          jsr   TGTINIT
+             lda   #$00
+             sta   NDONE
+             sta   NSKIP
+             sta   NFAIL
+:each        jsr   TGTNEXT
+             bcs   :done
+             ldy   TGTI
+             lda   (PACC),y
+             and   #$02
+             beq   :locked
+             lda   TGTI
+             jsr   PATHENT
+             jsr   DESTROYF
+             bcs   :failed
+             inc   NDONE
+             jmp   :each
+:locked      inc   NSKIP
+             jmp   :each
+*--- ProDOS said no. Keep the code now: the rescan below makes its own MLI
+*    calls and MLIERR will be theirs by the time anyone looks.
+:failed      lda   MLIERR
+             sta   DELERR
+             inc   NFAIL
+             jmp   :each
+
+:done        jsr   RESCAN
+             jsr   CLAMPSEL
+
+*--- A refusal by ProDOS and a file the writer locked are different things and
+*    are not to be reported as though they were the same.
+             lda   NFAIL
+             beq   :nofail
+             lda   DELERR
+             cmp   #$4e             ; the one worth naming: it is not empty
+             beq   :notempty
+             sta   MSGN
+             lda   #<MDELERR
+             ldy   #>MDELERR
+             jmp   SAYMSG
+:notempty    lda   #<MNOTEMPTY
+             ldy   #>MNOTEMPTY
+             jmp   SAYTEXT
+
+:nofail      lda   NSKIP
+             beq   :plain
+             lda   NDONE
+             beq   :none
+             sta   MSGN
+             lda   #<MDELSOME
+             ldy   #>MDELSOME
+             jmp   SAYMSG
+:none        lda   NSKIP
+             sta   MSGN
+             lda   #<MALLLOCK
+             ldy   #>MALLLOCK
+             jmp   SAYMSG
+:plain       lda   NDONE
+             sta   MSGN
+             lda   #<MDELETED
+             ldy   #>MDELETED
+             jmp   SAYMSG
+
+*--------------------------------------
+* CLAMPSEL -- keep the cursor inside a listing that just got shorter
+*--------------------------------------
+CLAMPSEL     ldx   PANSEL
+             lda   PCOUNT,x
+             bne   :some
+             sta   PCURSEL,x        ; an empty listing: the cursor is at zero
+             sta   PTOP,x
+             rts
+:some        sec
+             sbc   #$01
+             cmp   PCURSEL,x
+             bcs   :top
+             sta   PCURSEL,x
+:top         lda   PCURSEL,x
+             cmp   PTOP,x
+             bcs   :done
+             sta   PTOP,x
+:done        rts
+
+*--------------------------------------
+* CONFIRM -- ask before something that cannot be taken back
+*   MSGN and A/Y as SAYMSG. Carry clear only for Y.
+*--------------------------------------
+CONFIRM      sta   MSGPTR
+             sty   MSGPTR+1
+             jsr   DRAWCONFIRM
+:key         lda   KBD
+             bpl   :key
+             sta   KEYCHR
+             sta   KBDSTRB
+             lda   KEYCHR
+             cmp   #$9b             ; ESC means no, like everywhere else
+             beq   :no
+             and   #$df             ; either case
+             cmp   #$d9             ; Y
+             beq   :yes
+             cmp   #$ce             ; N
+             beq   :no
+             jmp   :key
+:yes         clc
+             rts
+:no          sec
+             rts
+
+DRAWCONFIRM  jsr   CLRBUF
+             lda   MSGN
+             sta   NUMLO
+             lda   #$00
+             sta   NUMHI
+             sta   TMPA
+             jsr   PUTNUM
+             lda   MSGPTR
+             ldy   MSGPTR+1
+             jsr   SETSTR
+             ldx   #$06
+             jsr   BUFSTR
+             jsr   INVBUF           ; a question the eye cannot miss
+             lda   #STATROW
+             jmp   DRAWLINE
 
 *--------------------------------------
 * PROMPTIN -- collect a name into PROMPT. Carry set if it was abandoned.
@@ -936,7 +1122,23 @@ MRENAMED     asc   "renamed"
              dfb   $00
 MRENERR      asc   "ProDOS would not: error"
              dfb   $00
-HINTTXT      asc   "SPC tag  TAB panel  RET open  L ock  R name  S wap  ESC quit"
+MDELVOL      asc   "a volume is not deleted from here"
+             dfb   $00
+MASKDEL      asc   "to delete, and it cannot be undone.  Y or N?"
+             dfb   $00
+MKEPT        asc   "kept"
+             dfb   $00
+MDELETED     asc   "deleted"
+             dfb   $00
+MDELSOME     asc   "deleted; the rest were locked"
+             dfb   $00
+MALLLOCK     asc   "locked, and so not deleted"
+             dfb   $00
+MDELERR      asc   "ProDOS refused; error code"
+             dfb   $00
+MNOTEMPTY    asc   "a directory has to be empty first"
+             dfb   $00
+HINTTXT      asc   "SPC tag  TAB panel  RET open  L ock  R name  D el  S wap"
              dfb   $00
 
 *--- mutable storage
@@ -953,6 +1155,8 @@ LEADZ        ds    1
 ALLLOCK      ds    1                ; is every target locked already?
 NDONE        ds    1                ; what a command managed
 NSKIP        ds    1                ; and what it could not
+NFAIL        ds    1                ; refused by ProDOS, which is not the same
+DELERR       ds    1                ; and the code it refused with
 MSGON        ds    1                ; a message owns the status row
 MSGNUM       ds    1                ; and whether it has a count in front
 MSGN         ds    1

@@ -93,6 +93,15 @@ DIRBUF       ds    512
 * write a file's block count into a reserved field, which is the kind of
 * mistake that is invisible until a directory is unreadable.
 *--------------------------------------
+DESTROYF     jsr   MLI
+             dfb   $c1
+             da    DESTPARM
+             sta   MLIERR
+             rts
+
+DESTPARM     dfb   $01
+             da    PATHWORK
+
 RENAMEF      jsr   MLI
              dfb   $c2
              da    RENPARM

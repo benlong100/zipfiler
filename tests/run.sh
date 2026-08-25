@@ -83,14 +83,20 @@ print('yes' if all(b<0x80 for b in d) else 'no')")
 
 # A destructive section starts from a fixture nobody has written to yet, so
 # sections cannot contaminate each other.
-fresh_fixture() {
-    "$ROOT/tests/mkfixture.sh" >/dev/null
-    cp "$FIXTURE" "$BEFORE"
-}
-
 eject_now() {
     osascript -e 'tell application "Virtual ][" to tell (last machine) to eject device "S6D1"' 2>/dev/null || true
     sleep 1
+}
+
+fresh_fixture() {
+    # Eject FIRST. Virtual ][ buffers writes to a mounted image and flushes
+    # them when it is ejected -- so rebuilding the file while the emulator
+    # still holds the old one means the next boot's eject writes stale blocks
+    # straight over the fresh fixture. That showed up as two blocks changing
+    # during a section that does not write at all.
+    eject_now
+    "$ROOT/tests/mkfixture.sh" >/dev/null
+    cp "$FIXTURE" "$BEFORE"
 }
 
 # assert_blocks <name> <block> [<block>...] -- exactly these and no others
@@ -426,6 +432,136 @@ assert_identical "and nothing was written"
 fi
 
 #--------------------------------------
+# D. The one command with nothing behind it.
+#
+# A delete frees blocks, so it must move the directory block AND the volume
+# bitmap -- and nothing else. A delete that freed somebody else's blocks would
+# look exactly like this one on screen.
+#--------------------------------------
+if section "delete"; then
+fresh_fixture
+reboot
+k key "down arrow"; k line ""          # into /FILER
+k key "down arrow"; k key "down arrow"; k key "down arrow"   # onto DATA.BIN
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "DATA.BIN is there to start with"      5 "DATA.BIN"
+
+k text "D"
+snapshot
+assert_row "it asks first"                       22 "cannot be undone"
+k text "N"
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "N keeps it"                           5 "DATA.BIN"
+assert_row "and says so"                         22 "kept"
+
+k text "D"
+k text "Y"
+"$VII" settle 2 >/dev/null
+snapshot
+assert_norow "Y removes it from the listing"      5 "DATA.BIN"
+assert_row "and counts it"                       22 "1 deleted"
+assert_row "the file below has moved up"          5 "PRODOS"
+
+eject_now
+assert_blocks "the directory and the bitmap, and nothing else" 2 6
+if "$ROOT/tools/ac" -g "$FIXTURE" README.TXT 2>/dev/null | grep -q "read me"; then
+    ok "the files around it are untouched"
+else
+    bad "the files around it are untouched" "README.TXT no longer reads"
+fi
+fi
+
+#--------------------------------------
+# Declining must write nothing at all.
+#--------------------------------------
+if section "delete declined"; then
+fresh_fixture
+reboot
+k key "down arrow"; k line ""
+k key "down arrow"; k key "down arrow"; k key "down arrow"
+k text "D"
+k text "N"
+"$VII" settle 2 >/dev/null
+eject_now
+assert_identical "saying no leaves the disk exactly as it was"
+fi
+
+#--------------------------------------
+# A locked file is not deleted -- the lock is the writer's stated intent, and
+# L is one key away. design.md section 7.
+#--------------------------------------
+if section "delete refuses a locked file"; then
+fresh_fixture
+reboot
+k key "down arrow"; k line ""
+k key "down arrow"; k key "down arrow" # onto README.TXT
+k text "L"                             # lock it
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "it is locked"                         4 "*README.TXT"
+
+k text "D"
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "and D will not take it"              22 "locked, and so not deleted"
+assert_row "the file is still there"              4 "README.TXT"
+
+eject_now
+# only the lock wrote; a delete would have moved the bitmap as well
+assert_blocks "only the lock wrote, not the delete" 2
+fi
+
+#--------------------------------------
+# A non-empty directory. ProDOS refuses this itself -- verified, error $4E --
+# and the refusal is reported as what it is rather than as a lock.
+#--------------------------------------
+if section "delete refuses a full directory"; then
+fresh_fixture
+reboot
+k key "down arrow"; k line ""
+k key "down arrow"                     # onto DOCS
+k text "D"
+k text "Y"
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "it says why"                         22 "directory has to be empty"
+assert_row "and DOCS survives"                    3 "DOCS"
+eject_now
+assert_identical "and nothing at all was written"
+fi
+
+#--------------------------------------
+# A tagged set, which is what the command is really for.
+#--------------------------------------
+if section "delete a set"; then
+fresh_fixture
+reboot
+k key "down arrow"; k line ""              # into /FILER
+k key "down arrow"; k line ""              # onto DOCS, into it
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "in DOCS"                              0 "/FILER/DOCS"
+k key "down arrow"; k line ""              # onto DRAFTS, into it
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "and then in DRAFTS"                   0 "/FILER/DOCS/DRAFTS"
+k text " "                                 # tag CH1.TXT
+k text " "                                 # tag CH2.TXT
+snapshot
+assert_row "two tagged"                          22 "2 tagged"
+k text "D"
+snapshot
+assert_row "it asks about both"                  22 "2 to delete"
+k text "Y"
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "both are gone"                       22 "2 deleted"
+assert_norow "the listing is empty"               2 "CH"
+fi
+
+#--------------------------------------
 # The whole of it is read-only, and this is the assertion that says so.
 #
 # Everything above navigated, scrolled and swapped. Nothing in the program
@@ -434,6 +570,7 @@ fi
 # looking exactly as correct as it does now.
 #--------------------------------------
 if section "reads nothing but reads"; then
+fresh_fixture
 "$VII" boot "$FIXTURE" >/dev/null
 "$VII" await "(volumes)" 60 >/dev/null
 k key "down arrow"; k line ""
