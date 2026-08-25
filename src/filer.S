@@ -20,9 +20,16 @@
 *--------------------------------------
 * START -- both panels open on the list of volumes
 *--------------------------------------
+*--- Everything below lives in a dum block, so none of it is part of the
+*    loaded file and none of it starts at a known value. Anything READ before
+*    it is written has to be set here: a garbage MSGON draws the status row
+*    from a pointer that was never set, and a garbage PRMDIR labels the rename
+*    prompt as a new directory -- which is exactly what it did.
 START        jsr   DISPINIT
              lda   #$00
              sta   PANEL
+             sta   MSGON
+             sta   PRMDIR
              lda   #$01
              jsr   SELPANEL
              jsr   TOVOLUMES
@@ -71,8 +78,16 @@ MAINLOOP     jsr   DRAWSCREEN
              beq   :tren
              cmp   #$ec
              beq   :tlock
-             cmp   #$9b             ; ESC: back to ProDOS
+             cmp   #$d1             ; Q, either case: back to ProDOS
              beq   :tquit
+             cmp   #$f1
+             beq   :tquit
+             cmp   #$ce             ; N, either case: a new directory
+             beq   :tmkdir
+             cmp   #$ee
+             beq   :tmkdir
+             cmp   #$bf             ; ? : the help screen
+             beq   :thelp
              jmp   :key
 
 *--- the handlers are further off than a branch reaches
@@ -88,6 +103,8 @@ MAINLOOP     jsr   DRAWSCREEN
 :tren        jmp   :rename
 :tdel        jmp   :delete
 :tcpy        jmp   :copy
+:tmkdir      jmp   :mkdir
+:thelp       jmp   :help
 
 :tab         lda   PANEL
              eor   #$01
@@ -288,6 +305,22 @@ MAINLOOP     jsr   DRAWSCREEN
              jsr   SAYTEXT
              jmp   MAINLOOP
 
+*--- N. A new directory in the focused panel. Needed all the more while a
+*    directory cannot be copied -- see design.md section 11.
+:mkdir       ldx   PANSEL
+             lda   PINVOL,x
+             beq   *+5
+             jmp   :mkvol           ; a volume list is not a place to make one
+             jsr   MKDIRCMD
+             jmp   MAINLOOP
+:mkvol       lda   #<MMKVOL
+             ldy   #>MMKVOL
+             jsr   SAYTEXT
+             jmp   MAINLOOP
+
+:help        jsr   HELPSCR
+             jmp   MAINLOOP
+
 QUITPARM     dfb   $04
              dfb   $00
              da    $0000
@@ -402,7 +435,9 @@ LOCKCMD      jsr   TGTINIT
 *--------------------------------------
 * RENCMD -- rename the entry under the cursor
 *--------------------------------------
-RENCMD       ldx   PANSEL
+RENCMD       lda   #$00
+             sta   PRMDIR           ; this prompt asks for a file name
+             ldx   PANSEL
              lda   PCURSEL,x
              pha
              jsr   PATHENT          ; what it is called now
@@ -448,6 +483,122 @@ RENCMD       ldx   PANSEL
              lda   #<MRENERR
              ldy   #>MRENERR
              jmp   SAYMSG
+
+*--------------------------------------
+* MKDIRCMD -- ask for a name and make a directory of it
+*--------------------------------------
+MKDIRCMD     lda   #$00
+             sta   PROMPT           ; nothing offered: this one is new
+             jsr   PROMPTDIR
+             bcc   :check
+             lda   #<MCANCEL
+             ldy   #>MCANCEL
+             jmp   SAYTEXT
+:check       jsr   OKNAME
+             bcc   :make
+             lda   #<MBADNAME
+             ldy   #>MBADNAME
+             jmp   SAYTEXT
+
+:make        jsr   NORMNAME
+             jsr   PATHPROMPT       ; the focused panel's directory, plus it
+             lda   #$c3
+             sta   CREACCESS
+             lda   #$0f             ; a directory is a file of type $0F
+             sta   CRETYPE
+             lda   #$00
+             sta   CREAUX
+             sta   CREAUX+1
+             sta   CREDATE
+             sta   CREDATE+1
+             sta   CRETIME
+             sta   CRETIME+1
+             lda   #$0d             ; and of storage type $0D
+             sta   CRESTORE
+             jsr   CREATEF
+             php
+             lda   #$01             ; put it back for a copy, which makes files
+             sta   CRESTORE
+             plp
+             bcs   :failed
+             jsr   RESCAN
+             lda   #<MMADE
+             ldy   #>MMADE
+             jmp   SAYTEXT
+:failed      lda   MLIERR
+             sta   MSGN
+             lda   #<MMKERR
+             ldy   #>MMKERR
+             jmp   SAYMSG
+
+*--------------------------------------
+* HELPSCR -- a screenful, until a key is pressed
+*--------------------------------------
+HELPSCR      jsr   CLRSCRN
+             lda   #$00
+             sta   ROWN
+:row         lda   ROWN
+             asl
+             tax
+             lda   HELPTBL+1,x
+             beq   :wait            ; a null pointer ends the table
+             pha
+             lda   HELPTBL,x
+             sta   STRPTR
+             pla
+             sta   STRPTR+1
+             jsr   CLRBUF
+             ldx   #$06
+             jsr   BUFSTR
+             lda   ROWN
+             jsr   DRAWLINE
+             inc   ROWN
+             lda   ROWN
+             cmp   #24
+             bcc   :row
+:wait        lda   KBD
+             bpl   :wait
+             sta   KBDSTRB
+             rts
+
+HELPTBL      da    H0,H1,H2,H3,H4,H5,H6,H7,H8,H9
+             da    H10,H11,H12,H13,H14,H15,H16,H17
+             da    $0000
+
+H0           asc   "A FILE MANAGER FOR PRODOS 8"
+             dfb   $00
+H1           dfb   $00
+H2           asc   "Two directories at once. The cursor keys pick"
+             dfb   $00
+H3           asc   "from them; a pathname never has to be typed."
+             dfb   $00
+H4           dfb   $00
+H5           asc   "  ARROWS   move the cursor"
+             dfb   $00
+H6           asc   "  TAB      the other panel"
+             dfb   $00
+H7           asc   "  RET      into a directory or a volume"
+             dfb   $00
+H8           asc   "  LEFT     up a level; out of a volume root"
+             dfb   $00
+H9           asc   "           it lists the volumes themselves"
+             dfb   $00
+H10          asc   "  SPACE    tag; commands act on the tagged"
+             dfb   $00
+H11          asc   "           set, or on the cursor line"
+             dfb   $00
+H12          asc   "  C        copy, LEFT panel to RIGHT"
+             dfb   $00
+H13          asc   "  S        swap the panels over"
+             dfb   $00
+H14          asc   "  L        lock, or unlock if all are locked"
+             dfb   $00
+H15          asc   "  R  D  N  rename, delete, new directory"
+             dfb   $00
+H16          asc   "  Q        back to ProDOS"
+             dfb   $00
+H17          asc   "                         press any key"
+             dfb   $00
 
 *--------------------------------------
 * DELCMD -- delete what the command applies to
@@ -657,12 +808,20 @@ PROMPTIN     jsr   DRAWPROMPT
 * DRAWPROMPT -- the status row, holding what has been typed so far
 *--------------------------------------
 DRAWPROMPT   jsr   CLRBUF
+             lda   PRMDIR
+             bne   :dir
              lda   #<MNEWNAME
              ldy   #>MNEWNAME
+             ldx   #$0a             ; the label already ends in a space
+             bne   :label           ; always taken
+:dir         lda   #<MDIRNAME
+             ldy   #>MDIRNAME
+             ldx   #$0f
+:label       stx   TMPC
              jsr   SETSTR
              ldx   #$00
              jsr   BUFSTR
-             ldx   #$0a             ; the label already ends in a space
+             ldx   TMPC
              lda   PROMPT
              beq   :caret
              sta   TMPB
@@ -678,6 +837,35 @@ DRAWPROMPT   jsr   CLRBUF
              sta   LINEBUF,x
              lda   #STATROW
              jmp   DRAWLINE
+
+*--------------------------------------
+* SAYWORK -- put "working" up BEFORE the thing that takes the time
+*
+* Reading a directory off a floppy is slow enough to wonder whether the key
+* registered. The status row is drawn on its own here, rather than waiting for
+* the redraw that follows, precisely because the redraw is the slow part.
+*--------------------------------------
+SAYWORK      jsr   CLRBUF
+             jsr   PANELBAR
+             lda   #<MWORKING
+             ldy   #>MWORKING
+             jsr   SETSTR
+             ldx   #$00
+             jsr   BUFSTR
+             lda   #STATROW
+             jmp   DRAWLINE
+
+*--------------------------------------
+* PROMPTDIR -- PROMPTIN, but labelled for a directory
+*--------------------------------------
+PROMPTDIR    lda   #$01
+             sta   PRMDIR
+             jsr   PROMPTIN
+             php
+             lda   #$00
+             sta   PRMDIR
+             plp
+             rts
 
 *--------------------------------------
 * SAYMSG -- a count and a phrase in the status row, until the next keystroke
@@ -1162,7 +1350,17 @@ MNOTEMPTY    asc   "a directory has to be empty first"
              dfb   $00
 MCPYVOL      asc   "both panels need to be in a directory"
              dfb   $00
-HINTTXT      asc   "SPC tag  RET open  C opy  L ock  R name  D el  S wap  TAB"
+MMKVOL       asc   "go into a volume first"
+             dfb   $00
+MMADE        asc   "made"
+             dfb   $00
+MMKERR       asc   "ProDOS would not; error code"
+             dfb   $00
+MWORKING     asc   "working"
+             dfb   $00
+MDIRNAME     asc   "NEW DIRECTORY: "
+             dfb   $00
+HINTTXT      asc   "SPC tag  RET open  C opy  L ock  R name  D el  N ew  S wap  Q uit  ? help"
              dfb   $00
 
 *--- mutable storage
@@ -1185,6 +1383,7 @@ MSGON        ds    1                ; a message owns the status row
 MSGNUM       ds    1                ; and whether it has a count in front
 MSGN         ds    1
 MSGPTR       ds    2
+PRMDIR       ds    1                ; the prompt is asking for a directory
              dend
 
 *--- The rest emit code, and $2000 belongs to START.

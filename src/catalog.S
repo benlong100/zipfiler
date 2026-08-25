@@ -94,7 +94,8 @@ NAMEAT       sta   TMPA
 * then the characters -- so pointing at both and using one index copies one
 * into the other with nothing to adjust.
 *--------------------------------------
-VOLSCAN      jsr   TAGNONE          ; tags belong to a listing, not to a panel
+VOLSCAN      jsr   SAYWORK          ; reading a device list is not instant
+             jsr   TAGNONE          ; tags belong to a listing, not to a panel
              jsr   ONLINEF
              ldx   PANSEL
              lda   #$00
@@ -154,7 +155,8 @@ VOLSCAN      jsr   TAGNONE          ; tags belong to a listing, not to a panel
 *
 * Carry set and MLIERR meaningful if it could not be read.
 *--------------------------------------
-DIRSCAN      jsr   TAGNONE          ; tags belong to a listing, not to a panel
+DIRSCAN      jsr   SAYWORK          ; a floppy takes long enough to wonder
+             jsr   TAGNONE          ; tags belong to a listing, not to a panel
              ldx   PANSEL
              lda   #$00
              sta   PCOUNT,x

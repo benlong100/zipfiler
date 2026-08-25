@@ -706,6 +706,91 @@ fi
 fi
 
 #--------------------------------------
+# The help screen, and Q.
+#--------------------------------------
+if section "help and quit"; then
+fresh_fixture
+reboot
+k text "?"
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "the help screen comes up"             0 "A FILE MANAGER FOR PRODOS 8"
+assert_row "it lists the keys"                    5 "ARROWS"
+assert_row "and says how to leave"               17 "press any key"
+
+k text " "
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "any key puts the panels back"         0 "(volumes)"
+assert_row "and the hint row names the new keys" 23 "N ew"
+assert_row "including quit"                      23 "Q uit"
+
+# ESC used to quit from here, which was too easy to do by accident
+"$VII" key esc >/dev/null; sleep 0.4
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "ESC no longer drops out of the program" 0 "(volumes)"
+fi
+
+#--------------------------------------
+# N, a new directory. Needed all the more while a directory cannot be copied.
+#--------------------------------------
+if section "new directory"; then
+fresh_fixture
+reboot
+k key "down arrow"; k line ""          # into /FILER
+"$VII" settle 2 >/dev/null
+k text "N"
+snapshot
+assert_row "it asks for a name"                  22 "NEW DIRECTORY:"
+
+k text "ARCHIVE"
+k line ""
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "and it appears as a directory"        6 "ARCHIVE         DIR"
+assert_row "and says so"                         22 "made"
+
+# a directory that ProDOS will actually walk into
+k key "down arrow"; k key "down arrow"; k key "down arrow"; k key "down arrow"
+k line ""
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "and it can be entered"                0 "/FILER/ARCHIVE"
+assert_row "and starts out empty"                22 "0 entries"
+
+eject_now
+if "$ROOT/tools/ac" -l "$FIXTURE" | grep -q "ARCHIVE DIR"; then
+    ok "ProDOS agrees it is a directory"
+else
+    bad "ProDOS agrees it is a directory" "$("$ROOT/tools/ac" -l "$FIXTURE" | grep -i archive)"
+fi
+fi
+
+#--------------------------------------
+# A name ProDOS would refuse must not make anything.
+#--------------------------------------
+if section "new directory refuses"; then
+fresh_fixture
+reboot
+k key "down arrow"; k line ""
+"$VII" settle 2 >/dev/null
+k text "N"
+k text "9NO"
+k line ""
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "a digit first is refused"            22 "letter first"
+k text "N"
+"$VII" key esc >/dev/null; sleep 0.4
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "and ESC abandons it"                 22 "left alone"
+eject_now
+assert_identical "neither wrote anything"
+fi
+
+#--------------------------------------
 # The whole of it is read-only, and this is the assertion that says so.
 #
 # Everything above navigated, scrolled and swapped. Nothing in the program

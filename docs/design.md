@@ -134,10 +134,21 @@ a two-panel manager already expects.
 | `L` | lock or unlock |
 | `D` | delete |
 | `S` | swap the panels |
+| `N` | a new directory |
+| `Q` | back to ProDOS |
 | `?` | help |
 
 Open-Apple ends up entirely unused, which is somewhere to put confirmations
 later, or nothing at all.
+
+**ESC does not quit.** It cancels a prompt and answers no to a question, and
+that is all. Quitting is `Q`, because ESC on the main screen was one keystroke
+between the writer and losing their place.
+
+**"working" goes up before the slow thing, not after it.** Reading a directory
+off a floppy is slow enough to wonder whether the key registered, so the status
+row is drawn on its own before a scan starts rather than waiting for the redraw
+that follows -- the redraw being the part that takes the time.
 
 **Copy is always left to right.** Fixing the direction means never having to
 express one, and `S` covers the other way. The alternative — copy from the

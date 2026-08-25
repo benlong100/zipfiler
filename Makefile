@@ -22,7 +22,7 @@ VII     := $(TOOLS)/vii.sh
 BIN     := $(BUILD)/$(NAME)
 IMAGE   := $(BUILD)/FILER.po
 
-.PHONY: all disk run screen test eject clean
+.PHONY: all disk run screen test fixture card eject clean
 
 all: $(BIN)
 
@@ -64,6 +64,18 @@ screen:
 test: $(IMAGE)
 	@tests/mkfixture.sh >/dev/null
 	@tests/run.sh $(SECTION)
+
+# A disk with something on it to practise on: two levels of subdirectory and
+# a few file types. build/FILER.po is bare -- just the program and ProDOS.
+fixture: $(IMAGE)
+	@tests/mkfixture.sh
+
+# Copy an image to a card. VOL is the mounted volume name, e.g.
+#   make card VOL="NO NAME"            the bare program disk
+#   make card VOL="NO NAME" IMG=build/FIXTURE.po   with files to play with
+IMG ?= $(IMAGE)
+card: $(IMAGE)
+	@$(TOOLS)/tocard.sh "$(VOL)" $(IMG)
 
 # Virtual ][ buffers image writes until eject.
 eject:
