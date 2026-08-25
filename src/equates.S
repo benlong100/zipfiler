@@ -43,6 +43,7 @@ PACC         equ   $1a
 PDST         equ   $1c              ; 2 bytes, where a path is being built
 PATHPTR      equ   $1e              ; 2 bytes, the chosen panel's path
 PTAGS        equ   $20              ; 2 bytes, the chosen panel's tag bitmap
+PBUF         equ   $22              ; 2 bytes, the path being built
 
 *--- The screen. Fixed at 80 columns: unlike the editor there is no 40 column
 *    machine to support, so the geometry is a set of equates rather than a

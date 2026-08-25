@@ -146,8 +146,17 @@ other commands, but it makes direction a mode rather than a visible fact, and
 the failure when you get it wrong is silent and overwrites something. Dull and
 predictable wins.
 
-Rename and any later new-directory command need a text prompt. ZipEdit's prompt
-layer does this already.
+Rename and any later new-directory command need a text prompt.
+
+**As built.** The prompt is the only place in the program that takes text, and
+it opens holding the existing name so that changing an extension is four
+keystrokes rather than fifteen. A name is checked here rather than left to the
+MLI -- one to fifteen characters, a letter first, then letters, digits and full
+stops -- so the writer is told which rule they broke instead of a hex code.
+ESC abandons it and says so.
+
+Renaming a volume is a different shape of path and is refused for now with a
+message. ProDOS will do it; the command has not been written.
 
 ## 6. Tagging
 

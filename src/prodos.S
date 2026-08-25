@@ -93,6 +93,17 @@ DIRBUF       ds    512
 * write a file's block count into a reserved field, which is the kind of
 * mistake that is invisible until a directory is unreadable.
 *--------------------------------------
+RENAMEF      jsr   MLI
+             dfb   $c2
+             da    RENPARM
+             sta   MLIERR
+             rts
+
+*--- ProDOS renames within a directory: both paths name the same parent.
+RENPARM      dfb   $02
+             da    PATHWORK         ; what it is called now
+             da    PATHNEW          ; and what it is to be called
+
 GINFOF       jsr   MLI
              dfb   $c4
              da    GINFOPARM

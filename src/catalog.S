@@ -368,7 +368,15 @@ TBLKLO       ds    1                ; and the blocks they come to
 TBLKHI       ds    1
 TGTI         ds    1                ; the target a command is working on
 SCANI        ds    1                ; how far the walk has got
-DIRLEN       ds    1                ; PATHENT: the directory part's length
+DIRLEN       ds    1                ; PATHBLD: the directory part's length
+             dend
+
+*--- What is being typed, and the path built from it. PROMPT has the same
+*    shape as a cached name -- a length byte then the characters -- so the
+*    same path builder takes either.
+             dum   $1700
+PROMPT       ds    16
+PATHNEW      ds    65
              dend
 
              dum   $1500
@@ -453,34 +461,29 @@ TAGSTATS     lda   #$00
 :done        rts
 
 *--------------------------------------
-* PATHENT -- PATHWORK = the full path of entry A in the chosen panel
+* PATHBLD -- (PBUF) = the panel's directory, a slash, and the name at NAMPTR
 *
-* A command has to name a file to ProDOS, and the panel only holds the
-* directory. This builds the whole thing in a buffer of its own, so the
-* panel's own path is never disturbed by an operation on one of its entries.
+* A command has to name a file to ProDOS and the panel only holds the
+* directory it is in. The result goes in a buffer of the caller's choosing,
+* so the panel's own path is never disturbed by an operation on one of its
+* entries -- and so a rename can build the old and the new name side by side.
 *--------------------------------------
-*--- NAMEAT below uses TMPA as scratch, so the directory's length is kept
-*    somewhere of its own. It cost an hour: the path came out as the
-*    directory, then rubbish, then the name at offset 36.
-PATHENT      pha
-             ldy   #$00
+PATHBLD      ldy   #$00
              lda   (PATHPTR),y
-             sta   DIRLEN           ; the directory's length
-             sta   PATHWORK
+             sta   DIRLEN           ; NAMEAT uses TMPA, so this needs its own
+             sta   (PBUF),y
              tay
              beq   :name
 :copy        lda   (PATHPTR),y
-             sta   PATHWORK,y
+             sta   (PBUF),y
              dey
              bne   :copy
 
-:name        pla
-             jsr   NAMEAT
-             lda   #<PATHWORK
+:name        lda   PBUF
              clc
              adc   DIRLEN
              sta   PDST
-             lda   #>PATHWORK
+             lda   PBUF+1
              adc   #$00
              sta   PDST+1
              inc   PDST             ; the slash goes one past the end
@@ -490,7 +493,105 @@ PATHENT      pha
              lda   DIRLEN
              sec                    ; the directory, the name and the slash
              adc   TMPB
-             sta   PATHWORK
+             ldy   #$00
+             sta   (PBUF),y
+             rts
+
+*--------------------------------------
+* PATHENT -- PATHWORK = the full path of entry A in the chosen panel
+*--------------------------------------
+PATHENT      jsr   NAMEAT
+             lda   #<PATHWORK
+             sta   PBUF
+             lda   #>PATHWORK
+             sta   PBUF+1
+             jmp   PATHBLD
+
+*--------------------------------------
+* PATHPROMPT -- PATHNEW = the same directory with the typed name on the end
+*--------------------------------------
+PATHPROMPT   lda   #<PROMPT
+             sta   NAMPTR
+             lda   #>PROMPT
+             sta   NAMPTR+1
+             lda   #<PATHNEW
+             sta   PBUF
+             lda   #>PATHNEW
+             sta   PBUF+1
+             jmp   PATHBLD
+
+*--------------------------------------
+* NORMNAME -- PROMPT to what ProDOS wants: low ASCII, upper case
+*
+* It is typed in whatever case the keyboard was in and drawn high, and a
+* pathname is the one place on this machine where the high bit stays off.
+*--------------------------------------
+NORMNAME     ldy   PROMPT
+             beq   :done
+:loop        lda   PROMPT,y
+             and   #$7f
+             cmp   #$61             ; 'a'
+             bcc   :put
+             cmp   #$7b             ; past 'z'
+             bcs   :put
+             sec
+             sbc   #$20
+:put         sta   PROMPT,y
+             dey
+             bne   :loop
+:done        rts
+
+*--------------------------------------
+* OKNAME -- is PROMPT a name ProDOS will take? Carry set if not.
+*
+* One to fifteen characters, a letter first, then letters, digits and full
+* stops. Checked here rather than left to the MLI, so the writer is told
+* which rule they broke instead of a hex error code.
+*--------------------------------------
+OKNAME       lda   PROMPT
+             beq   :no              ; nothing typed
+             cmp   #$10
+             bcs   :no              ; longer than fifteen
+             lda   PROMPT+1
+             jsr   ISALPHA
+             bcs   :no              ; must start with a letter
+             ldy   PROMPT
+:loop        lda   PROMPT,y
+             jsr   ISALPHA
+             bcc   :next
+             jsr   ISDIGIT
+             bcc   :next
+             cmp   #$ae             ; '.', drawn high
+             bne   :no
+:next        dey
+             bne   :loop
+             clc
+             rts
+:no          sec
+             rts
+
+*--- carry clear if A is a letter, either case, high ASCII
+ISALPHA      cmp   #$c1             ; 'A'
+             bcc   :no
+             cmp   #$db             ; past 'Z'
+             bcc   :yes
+             cmp   #$e1             ; 'a'
+             bcc   :no
+             cmp   #$fb             ; past 'z'
+             bcs   :no
+:yes         clc
+             rts
+:no          sec
+             rts
+
+*--- carry clear if A is a digit
+ISDIGIT      cmp   #$b0
+             bcc   :no
+             cmp   #$ba
+             bcs   :no
+             clc
+             rts
+:no          sec
              rts
 
 *--------------------------------------

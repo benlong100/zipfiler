@@ -57,6 +57,10 @@ MAINLOOP     jsr   DRAWSCREEN
              beq   :ttag
              cmp   #$cc             ; L, either case: lock or unlock
              beq   :tlock
+             cmp   #$d2             ; R, either case: rename
+             beq   :tren
+             cmp   #$f2
+             beq   :tren
              cmp   #$ec
              beq   :tlock
              cmp   #$9b             ; ESC: back to ProDOS
@@ -73,6 +77,7 @@ MAINLOOP     jsr   DRAWSCREEN
 :tquit       jmp   :quit
 :ttag        jmp   :tag
 :tlock       jmp   :lock
+:tren        jmp   :rename
 
 :tab         lda   PANEL
              eor   #$01
@@ -223,6 +228,23 @@ MAINLOOP     jsr   DRAWSCREEN
              jsr   SAYTEXT
              jmp   MAINLOOP
 
+*--- R. Rename takes the cursor line and ignores tags: renaming five files to
+*    one name means nothing -- design.md section 6.
+:rename      ldx   PANSEL
+             lda   PINVOL,x
+             beq   *+5
+             jmp   :renvol          ; a volume is renamed by another route
+             ldx   PANSEL
+             lda   PCOUNT,x
+             bne   *+5
+             jmp   :key
+             jsr   RENCMD
+             jmp   MAINLOOP
+:renvol      lda   #<MRENVOL
+             ldy   #>MRENVOL
+             jsr   SAYTEXT
+             jmp   MAINLOOP
+
 QUITPARM     dfb   $04
              dfb   $00
              da    $0000
@@ -333,6 +355,121 @@ LOCKCMD      jsr   TGTINIT
 :sayun       lda   #<MUNLOCK
              ldy   #>MUNLOCK
              jmp   SAYMSG
+
+*--------------------------------------
+* RENCMD -- rename the entry under the cursor
+*--------------------------------------
+RENCMD       ldx   PANSEL
+             lda   PCURSEL,x
+             pha
+             jsr   PATHENT          ; what it is called now
+
+*--- the prompt starts out holding the existing name, so a small change is a
+*    small amount of typing
+             pla
+             jsr   NAMEAT
+             ldy   #$00
+             lda   (NAMPTR),y
+             sta   PROMPT
+             sta   TMPB
+             beq   :ask
+:fill        iny
+             lda   (NAMPTR),y
+             ora   #$80             ; held low, typed and drawn high
+             sta   PROMPT,y
+             cpy   TMPB
+             bcc   :fill
+
+:ask         jsr   PROMPTIN
+             bcc   :check
+             lda   #<MCANCEL
+             ldy   #>MCANCEL
+             jmp   SAYTEXT
+
+:check       jsr   OKNAME
+             bcc   :doit
+             lda   #<MBADNAME
+             ldy   #>MBADNAME
+             jmp   SAYTEXT
+
+:doit        jsr   NORMNAME
+             jsr   PATHPROMPT
+             jsr   RENAMEF
+             bcs   :failed
+             jsr   RESCAN
+             lda   #<MRENAMED
+             ldy   #>MRENAMED
+             jmp   SAYTEXT
+:failed      lda   MLIERR
+             sta   MSGN
+             lda   #<MRENERR
+             ldy   #>MRENERR
+             jmp   SAYMSG
+
+*--------------------------------------
+* PROMPTIN -- collect a name into PROMPT. Carry set if it was abandoned.
+*
+* The only place in the program that takes text, which is why every command
+* can be a bare letter everywhere else.
+*--------------------------------------
+PROMPTIN     jsr   DRAWPROMPT
+:key         lda   KBD
+             bpl   :key
+             sta   KEYCHR
+             sta   KBDSTRB
+             lda   KEYCHR
+             cmp   #$8d             ; RET: take it
+             beq   :done
+             cmp   #$9b             ; ESC: abandon it
+             beq   :quit
+             cmp   #$88             ; left arrow, and Delete, rub out
+             beq   :rub
+             cmp   #$ff
+             beq   :rub
+             cmp   #$a0             ; anything below space is not a name
+             bcc   :key
+             ldx   PROMPT
+             cpx   #$0f             ; fifteen is all ProDOS will hold
+             bcs   :key
+             inx
+             sta   PROMPT,x
+             stx   PROMPT
+             jmp   PROMPTIN
+:rub         ldx   PROMPT
+             beq   :key
+             dex
+             stx   PROMPT
+             jmp   PROMPTIN
+:done        clc
+             rts
+:quit        sec
+             rts
+
+*--------------------------------------
+* DRAWPROMPT -- the status row, holding what has been typed so far
+*--------------------------------------
+DRAWPROMPT   jsr   CLRBUF
+             lda   #<MNEWNAME
+             ldy   #>MNEWNAME
+             jsr   SETSTR
+             ldx   #$00
+             jsr   BUFSTR
+             ldx   #$0a             ; the label already ends in a space
+             lda   PROMPT
+             beq   :caret
+             sta   TMPB
+             ldy   #$01
+:copy        lda   PROMPT,y
+             sta   LINEBUF,x
+             inx
+             cpy   TMPB
+             bcs   :caret
+             iny
+             bne   :copy
+:caret       lda   #$20             ; an inverse space, so there is a cursor
+             sta   LINEBUF,x
+             lda   #STATROW
+             jmp   DRAWLINE
 
 *--------------------------------------
 * SAYMSG -- a count and a phrase in the status row, until the next keystroke
@@ -787,7 +924,19 @@ MUNLOCK      asc   "unlocked"
              dfb   $00
 MVOL         asc   "a volume cannot be locked"
              dfb   $00
-HINTTXT      asc   "SPC tag  TAB panel  RET open  LEFT up  L ock  S wap  ESC quit"
+MRENVOL      asc   "a volume is not renamed from here"
+             dfb   $00
+MNEWNAME     asc   "NEW NAME: "
+             dfb   $00
+MCANCEL      asc   "left alone"
+             dfb   $00
+MBADNAME     asc   "a name is 1-15 characters, a letter first"
+             dfb   $00
+MRENAMED     asc   "renamed"
+             dfb   $00
+MRENERR      asc   "ProDOS would not: error"
+             dfb   $00
+HINTTXT      asc   "SPC tag  TAB panel  RET open  L ock  R name  S wap  ESC quit"
              dfb   $00
 
 *--- mutable storage

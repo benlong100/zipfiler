@@ -110,6 +110,9 @@ assert_identical() {
     if [ "$out" = "identical" ]; then ok "$1"; else bad "$1" "$out"; fi
 }
 
+# the prompt opens pre-filled with the existing name
+prompt_clear() { local i; for i in $(seq 1 15); do "$VII" key "left arrow" >/dev/null; done; sleep 0.3; }
+
 reboot() {
     "$VII" boot "$FIXTURE" >/dev/null || { echo "boot failed" >&2; exit 1; }
     "$VII" speed maximum >/dev/null
@@ -338,6 +341,88 @@ snapshot
 assert_row "it explains itself"                  22 "volume cannot be locked"
 eject_now
 assert_identical "and wrote nothing"
+fi
+
+#--------------------------------------
+# R. The only place in the program that takes text, which is what lets every
+# other command be a bare letter.
+#--------------------------------------
+if section "rename"; then
+fresh_fixture
+reboot
+k key "down arrow"; k line ""          # into /FILER
+k key "down arrow"; k key "down arrow" # onto README.TXT
+"$VII" settle 2 >/dev/null
+k text "R"
+snapshot
+assert_row "the prompt opens holding the old name" 22 "NEW NAME: README.TXT"
+
+prompt_clear
+k text "NOTES.MD"
+k line ""
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "the listing shows the new name"        4 "NOTES.MD"
+assert_norow "and not the old one"                 4 "README"
+assert_row "and it says what it did"              22 "renamed"
+
+eject_now
+assert_blocks "only the directory block moved"     2
+if "$ROOT/tools/ac" -g "$FIXTURE" NOTES.MD 2>/dev/null | grep -q "read me"; then
+    ok "and the file still holds what it held"
+else
+    bad "and the file still holds what it held" "contents lost or unreadable"
+fi
+fi
+
+#--------------------------------------
+# ESC out of the prompt, and a name ProDOS would refuse. Neither may write.
+#--------------------------------------
+if section "rename refuses"; then
+fresh_fixture
+reboot
+k key "down arrow"; k line ""
+k key "down arrow"; k key "down arrow"
+"$VII" settle 2 >/dev/null
+
+k text "R"
+prompt_clear
+k text "SOMETHING"
+"$VII" key esc >/dev/null; sleep 0.4
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "ESC leaves it alone"                   4 "README.TXT"
+assert_row "and says so"                          22 "left alone"
+
+k text "R"
+prompt_clear
+k text "9BAD"                          # a name may not start with a digit
+k line ""
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "a name starting with a digit is refused" 22 "letter first"
+assert_row "and the file keeps its name"           4 "README.TXT"
+
+eject_now
+assert_identical "neither refusal wrote anything"
+fi
+
+#--------------------------------------
+# Rename ignores tags: renaming five files to one name means nothing.
+#--------------------------------------
+if section "rename ignores tags"; then
+fresh_fixture
+reboot
+k key "down arrow"; k line ""
+"$VII" settle 2 >/dev/null
+k text " "                             # tag FILER.SYSTEM, cursor moves to DOCS
+k text " "                             # tag DOCS, cursor moves to README.TXT
+k text "R"
+snapshot
+assert_row "the prompt offers the CURSOR line"    22 "NEW NAME: README.TXT"
+"$VII" key esc >/dev/null; sleep 0.4
+eject_now
+assert_identical "and nothing was written"
 fi
 
 #--------------------------------------
