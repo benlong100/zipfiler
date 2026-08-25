@@ -1,8 +1,17 @@
 # Design: a two-panel file manager for the Enhanced Apple //e
 
-Working name **ZipFiler**, which is a placeholder and wants deciding. The
-directory is `a2-filer` to sit beside `a2-editor`; the product name is a
-separate question.
+**ZipFiler**, which pairs with ZipEdit. It was called ZipFiler in this document
+as a placeholder and is now the name.
+
+Not *Filer*: Apple's own System Utilities ship a `FILER.SYSTEM`, and two of
+them on one card is somebody's bad afternoon. `ZIPFILER.SYSTEM` is exactly
+fifteen characters, which is exactly what ProDOS allows -- one more and it
+would land truncated, stop looking like a `.SYSTEM` file, and the disk would
+quietly boot to BASIC. ZipEdit hit that wall with `ZIPEDIT2P.SYSTEM` at
+sixteen; this one fits by a single character.
+
+The repository is `a2-filer`, beside `a2-editor`, the way `a2-editor` is not
+called `zipedit`.
 
 ## 1. Goals and non-goals
 
@@ -366,7 +375,6 @@ cursor line is really highlighted is a question only screen memory answers.
 
 ## 13. Open questions
 
-- The product name.
 - Whether the hint row earns its place, or a twenty-first entry is worth more.
 - ~~Whether `L` toggles~~. It toggles, defined as *lock unless every target is
   locked already*, so one key always does the thing that is not already true.

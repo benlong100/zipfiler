@@ -1,5 +1,5 @@
 *--------------------------------------
-* FILER.S -- a two-panel file manager for the Enhanced Apple //e
+* ZIPFILER.S -- a two-panel file manager for the Enhanced Apple //e
 *
 * ProDOS 8 enters a SYS file at $2000. See docs/design.md.
 *
@@ -10,7 +10,7 @@
 *--------------------------------------
              org   $2000
              typ   $ff
-             dsk   FILER.SYSTEM
+             dsk   ZIPFILER.SYSTEM
 
 *--- equates emit nothing, so they are safe here. The rest emit CODE, and
 *    ProDOS enters a SYS file at $2000 -- so they are PUT at the end, after
@@ -565,7 +565,7 @@ HELPTBL      da    H0,H1,H2,H3,H4,H5,H6,H7,H8,H9
              da    H10,H11,H12,H13,H14,H15,H16,H17
              da    $0000
 
-H0           asc   "A FILE MANAGER FOR PRODOS 8"
+H0           asc   "ZIPFILER -- A FILE MANAGER FOR PRODOS 8"
              dfb   $00
 H1           dfb   $00
 H2           asc   "Two directories at once. The cursor keys pick"

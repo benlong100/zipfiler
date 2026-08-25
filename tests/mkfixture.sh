@@ -12,7 +12,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AC="$ROOT/tools/ac"
 OUT="${1:-$ROOT/build/FIXTURE.po}"
 
-cp "$ROOT/build/FILER.po" "$OUT"
+cp "$ROOT/build/ZIPFILER.po" "$OUT"
 
 printf 'a note in a subdirectory\r' | "$AC" -p "$OUT" DOCS/NOTE.TXT TXT
 printf 'chapter one\r'             | "$AC" -p "$OUT" DOCS/DRAFTS/CH1.TXT TXT

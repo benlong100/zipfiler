@@ -116,11 +116,11 @@ assert_identical() {
     if [ "$out" = "identical" ]; then ok "$1"; else bad "$1" "$out"; fi
 }
 
-# left panel in /FILER, right panel in /FILER/DOCS, focus back on the left
+# left panel in /ZIPFILER, right panel in /ZIPFILER/DOCS, focus back on the left
 setup_copy() {
-    k key "down arrow"; k line ""      # left into /FILER
+    k key "down arrow"; k line ""      # left into /ZIPFILER
     k ctrl I                           # focus the right panel
-    k key "down arrow"; k line ""      # right into /FILER
+    k key "down arrow"; k line ""      # right into /ZIPFILER
     k key "down arrow"; k line ""      # and on into DOCS
     k ctrl I                           # focus back to the left
     "$VII" settle 2 >/dev/null
@@ -148,7 +148,7 @@ reboot
 snapshot
 assert_row "the left panel names itself"          0 ">(volumes)"
 assert_row "and so does the right"                0 "(volumes)"
-assert_row "the boot volume is listed"            3 "FILER"
+assert_row "the boot volume is listed"            3 "ZIPFILER"
 assert_row "a volume shows as VOL, not a type"    3 "VOL"
 assert_row "the divider runs down the screen"     2 "|"
 assert_row "the rule crosses it"                  1 "+"
@@ -160,17 +160,17 @@ fi
 #--------------------------------------
 if section "directory"; then
 reboot
-k key "down arrow"          # onto FILER
+k key "down arrow"          # onto ZIPFILER
 k line ""                   # RET: into it
 "$VII" settle 2 >/dev/null
 snapshot
-assert_row "the path is the volume"               0 "/FILER"
-assert_row "the editor's own SYS file is there"   2 "FILER.SYSTEM"
+assert_row "the path is the volume"               0 "/ZIPFILER"
+assert_row "the editor's own SYS file is there"   2 "ZIPFILER.SYSTEM"
 assert_row "with its type"                        2 "SYS"
 # derived from the image rather than written in, so it does not break every
 # time the program changes size -- and it checks the panel against ProDOS's
 # own accounting rather than against a number I typed
-sysblk=$("$ROOT/tools/ac" -l "$FIXTURE" | awk '/FILER.SYSTEM/ {print $3+0}')
+sysblk=$("$ROOT/tools/ac" -l "$FIXTURE" | awk '/ZIPFILER.SYSTEM/ {print $3+0}')
 assert_row "and its size in blocks"               2 "$sysblk"
 assert_row "a subdirectory reads as DIR"          3 "DOCS"
 assert_row "ProDOS itself is listed"              6 "PRODOS"
@@ -182,24 +182,24 @@ fi
 #--------------------------------------
 if section "navigation"; then
 reboot
-k key "down arrow"; k line ""          # into /FILER
-k key "down arrow"; k line ""          # into /FILER/DOCS
+k key "down arrow"; k line ""          # into /ZIPFILER
+k key "down arrow"; k line ""          # into /ZIPFILER/DOCS
 "$VII" settle 2 >/dev/null
 snapshot
-assert_row "two levels down"                      0 "/FILER/DOCS"
+assert_row "two levels down"                      0 "/ZIPFILER/DOCS"
 assert_row "and its contents"                     2 "NOTE.TXT"
 
-k key "down arrow"; k line ""          # into /FILER/DOCS/DRAFTS
+k key "down arrow"; k line ""          # into /ZIPFILER/DOCS/DRAFTS
 "$VII" settle 2 >/dev/null
 snapshot
-assert_row "three levels down"                    0 "/FILER/DOCS/DRAFTS"
+assert_row "three levels down"                    0 "/ZIPFILER/DOCS/DRAFTS"
 assert_row "both drafts are there"                2 "CH1.TXT"
 assert_row "and the second"                       3 "CH2.TXT"
 
 k key "left arrow"; "$VII" settle 2 >/dev/null; snapshot
-assert_row "up one"                               0 "/FILER/DOCS"
+assert_row "up one"                               0 "/ZIPFILER/DOCS"
 k key "left arrow"; "$VII" settle 2 >/dev/null; snapshot
-assert_row "up two"                               0 "/FILER"
+assert_row "up two"                               0 "/ZIPFILER"
 k key "left arrow"; "$VII" settle 2 >/dev/null; snapshot
 assert_row "up out of a root is the volume list"  0 "(volumes)"
 fi
@@ -209,29 +209,29 @@ fi
 #--------------------------------------
 if section "two panels"; then
 reboot
-k key "down arrow"; k line ""          # left into /FILER
-k key "down arrow"; k line ""          # left into /FILER/DOCS
+k key "down arrow"; k line ""          # left into /ZIPFILER
+k key "down arrow"; k line ""          # left into /ZIPFILER/DOCS
 "$VII" settle 2 >/dev/null
 k ctrl I                               # TAB
 "$VII" settle 2 >/dev/null
 snapshot
 assert_row "focus moved to the right panel"       0 ">(volumes)"
-assert_norow "and left the left one unmarked"     0 ">/FILER/DOCS"
-assert_row "the left panel kept its place"        0 "/FILER/DOCS"
+assert_norow "and left the left one unmarked"     0 ">/ZIPFILER/DOCS"
+assert_row "the left panel kept its place"        0 "/ZIPFILER/DOCS"
 assert_row "the right panel still lists volumes"  2 "RAM"
 
-k key "down arrow"; k line ""          # right into /FILER
+k key "down arrow"; k line ""          # right into /ZIPFILER
 "$VII" settle 2 >/dev/null
 snapshot
-assert_row "the panels are in different places"   0 "/FILER/DOCS"
+assert_row "the panels are in different places"   0 "/ZIPFILER/DOCS"
 assert_row "each with its own listing"            2 "NOTE.TXT"
-assert_row "and the right one has the root"       2 "FILER.SYSTEM"
+assert_row "and the right one has the root"       2 "ZIPFILER.SYSTEM"
 
 k text "S"                             # swap
 "$VII" settle 2 >/dev/null
 snapshot
-assert_row "S exchanges them"                     0 "/FILER  "
-assert_row "the other way round"                  0 "/FILER/DOCS"
+assert_row "S exchanges them"                     0 "/ZIPFILER  "
+assert_row "the other way round"                  0 "/ZIPFILER/DOCS"
 fi
 
 #--------------------------------------
@@ -240,20 +240,20 @@ fi
 #--------------------------------------
 if section "tagging"; then
 reboot
-k key "down arrow"; k line ""          # into /FILER
+k key "down arrow"; k line ""          # into /ZIPFILER
 "$VII" settle 2 >/dev/null
-k text " "                             # tag FILER.SYSTEM, step down
+k text " "                             # tag ZIPFILER.SYSTEM, step down
 k text " "                             # tag DOCS, step down
 "$VII" settle 2 >/dev/null
 snapshot
-assert_row "the first is marked"                  2 "> FILER.SYSTEM"
+assert_row "the first is marked"                  2 "> ZIPFILER.SYSTEM"
 assert_row "and so is the second"                 3 "> DOCS"
 assert_norow "the one after is not"               4 ">"
 assert_row "the count is in the status row"      22 "2 tagged"
 assert_row "and the blocks they come to"         22 "blocks"
 
 # The blocks are the number worth knowing before a copy, so check the sum
-# rather than just its presence: FILER.SYSTEM plus a one-block directory.
+# rather than just its presence: ZIPFILER.SYSTEM plus a one-block directory.
 # cut to the left panel first: a row holds both, so the last field of the
 # whole line belongs to the other one
 blocks=$(sed -n '23p' "$SCREEN" | cut -c1-39 | sed 's/.*tagged, *//;s/ *blocks.*//')
@@ -280,7 +280,7 @@ fi
 if section "lock"; then
 fresh_fixture
 reboot
-k key "down arrow"; k line ""          # into /FILER
+k key "down arrow"; k line ""          # into /ZIPFILER
 k key "down arrow"; k key "down arrow" # onto README.TXT
 "$VII" settle 2 >/dev/null
 snapshot
@@ -328,15 +328,15 @@ fi
 if section "lock a set"; then
 fresh_fixture
 reboot
-k key "down arrow"; k line ""          # into /FILER
+k key "down arrow"; k line ""          # into /ZIPFILER
 "$VII" settle 2 >/dev/null
-k text " "                             # tag FILER.SYSTEM
+k text " "                             # tag ZIPFILER.SYSTEM
 k text " "                             # tag DOCS
 k text " "                             # tag README.TXT
 k text "L"
 "$VII" settle 2 >/dev/null
 snapshot
-assert_row "all three are locked"                 2 "*FILER.SYSTEM"
+assert_row "all three are locked"                 2 "*ZIPFILER.SYSTEM"
 assert_row "including the directory"              3 "*DOCS"
 assert_row "and the third"                        4 "*README.TXT"
 assert_row "and it counted them"                 22 "3 locked"
@@ -366,7 +366,7 @@ fi
 if section "rename"; then
 fresh_fixture
 reboot
-k key "down arrow"; k line ""          # into /FILER
+k key "down arrow"; k line ""          # into /ZIPFILER
 k key "down arrow"; k key "down arrow" # onto README.TXT
 "$VII" settle 2 >/dev/null
 k text "R"
@@ -431,7 +431,7 @@ fresh_fixture
 reboot
 k key "down arrow"; k line ""
 "$VII" settle 2 >/dev/null
-k text " "                             # tag FILER.SYSTEM, cursor moves to DOCS
+k text " "                             # tag ZIPFILER.SYSTEM, cursor moves to DOCS
 k text " "                             # tag DOCS, cursor moves to README.TXT
 k text "R"
 snapshot
@@ -451,7 +451,7 @@ fi
 if section "delete"; then
 fresh_fixture
 reboot
-k key "down arrow"; k line ""          # into /FILER
+k key "down arrow"; k line ""          # into /ZIPFILER
 k key "down arrow"; k key "down arrow"; k key "down arrow"   # onto DATA.BIN
 "$VII" settle 2 >/dev/null
 snapshot
@@ -548,15 +548,15 @@ fi
 if section "delete a set"; then
 fresh_fixture
 reboot
-k key "down arrow"; k line ""              # into /FILER
+k key "down arrow"; k line ""              # into /ZIPFILER
 k key "down arrow"; k line ""              # onto DOCS, into it
 "$VII" settle 2 >/dev/null
 snapshot
-assert_row "in DOCS"                              0 "/FILER/DOCS"
+assert_row "in DOCS"                              0 "/ZIPFILER/DOCS"
 k key "down arrow"; k line ""              # onto DRAFTS, into it
 "$VII" settle 2 >/dev/null
 snapshot
-assert_row "and then in DRAFTS"                   0 "/FILER/DOCS/DRAFTS"
+assert_row "and then in DRAFTS"                   0 "/ZIPFILER/DOCS/DRAFTS"
 k text " "                                 # tag CH1.TXT
 k text " "                                 # tag CH2.TXT
 snapshot
@@ -584,8 +584,8 @@ fresh_fixture
 reboot
 setup_copy
 snapshot
-assert_row "left panel is the root"               0 "/FILER "
-assert_row "right panel is DOCS"                  0 "/FILER/DOCS"
+assert_row "left panel is the root"               0 "/ZIPFILER "
+assert_row "right panel is DOCS"                  0 "/ZIPFILER/DOCS"
 
 k key "down arrow"; k key "down arrow"   # onto README.TXT
 k text "C"
@@ -651,9 +651,9 @@ fi
 if section "copy refuses the same directory"; then
 fresh_fixture
 reboot
-k key "down arrow"; k line ""          # left into /FILER
+k key "down arrow"; k line ""          # left into /ZIPFILER
 k ctrl I
-k key "down arrow"; k line ""          # right into /FILER too
+k key "down arrow"; k line ""          # right into /ZIPFILER too
 k ctrl I
 "$VII" settle 2 >/dev/null
 k text "C"
@@ -674,7 +674,7 @@ fi
 if section "copy a directory"; then
 fresh_fixture
 reboot
-k key "down arrow"; k line ""          # left into /FILER
+k key "down arrow"; k line ""          # left into /ZIPFILER
 "$VII" settle 2 >/dev/null
 k text "N"; k text "BACKUP"; k line "" # somewhere to put it
 "$VII" settle 2 >/dev/null
@@ -686,7 +686,7 @@ k line ""
 "$VII" settle 2 >/dev/null
 k ctrl I
 snapshot
-assert_row "the destination is the new directory"  0 "/FILER/BACKUP"
+assert_row "the destination is the new directory"  0 "/ZIPFILER/BACKUP"
 
 k key "down arrow"                     # onto DOCS
 k text "C"
@@ -773,7 +773,7 @@ fi
 if section "new directory"; then
 fresh_fixture
 reboot
-k key "down arrow"; k line ""          # into /FILER
+k key "down arrow"; k line ""          # into /ZIPFILER
 "$VII" settle 2 >/dev/null
 k text "N"
 snapshot
@@ -791,7 +791,7 @@ k key "down arrow"; k key "down arrow"; k key "down arrow"; k key "down arrow"
 k line ""
 "$VII" settle 2 >/dev/null
 snapshot
-assert_row "and it can be entered"                0 "/FILER/ARCHIVE"
+assert_row "and it can be entered"                0 "/ZIPFILER/ARCHIVE"
 assert_row "and starts out empty"                22 "0 entries"
 
 eject_now

@@ -10,7 +10,7 @@
 
 VERSION := 0.1
 SRC     ?= src/filer.S
-NAME    ?= FILER.SYSTEM
+NAME    ?= ZIPFILER.SYSTEM
 BUILD   := build
 TOOLS   := tools
 
@@ -20,7 +20,7 @@ AC      := $(TOOLS)/ac
 VII     := $(TOOLS)/vii.sh
 
 BIN     := $(BUILD)/$(NAME)
-IMAGE   := $(BUILD)/FILER.po
+IMAGE   := $(BUILD)/ZIPFILER.po
 
 .PHONY: all disk run screen test fixture card eject clean
 
@@ -48,7 +48,7 @@ $(BUILD):
 disk: $(IMAGE)
 
 $(IMAGE): $(BIN)
-	@VOL=FILER SYS=$(NAME) $(TOOLS)/mkdisk.sh $(IMAGE) $(BIN)
+	@VOL=ZIPFILER SYS=$(NAME) $(TOOLS)/mkdisk.sh $(IMAGE) $(BIN)
 
 run: $(IMAGE)
 	@$(VII) boot $(IMAGE)
@@ -66,7 +66,7 @@ test: $(IMAGE)
 	@tests/run.sh $(SECTION)
 
 # A disk with something on it to practise on: two levels of subdirectory and
-# a few file types. build/FILER.po is bare -- just the program and ProDOS.
+# a few file types. build/ZIPFILER.po is bare -- just the program and ProDOS.
 fixture: $(IMAGE)
 	@tests/mkfixture.sh
 
