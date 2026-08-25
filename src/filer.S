@@ -23,13 +23,14 @@
 *--- Everything below lives in a dum block, so none of it is part of the
 *    loaded file and none of it starts at a known value. Anything READ before
 *    it is written has to be set here: a garbage MSGON draws the status row
-*    from a pointer that was never set, and a garbage PRMDIR labels the rename
+*    from a pointer that was never set, and a garbage PRMMODE labels the rename
 *    prompt as a new directory -- which is exactly what it did.
 START        jsr   DISPINIT
+             jsr   SPLASH           ; something to look at while it reads
              lda   #$00
              sta   PANEL
              sta   MSGON
-             sta   PRMDIR
+             sta   PRMMODE
              lda   #$01
              jsr   SELPANEL
              jsr   TOVOLUMES
@@ -88,6 +89,8 @@ MAINLOOP     jsr   DRAWSCREEN
              beq   :tmkdir
              cmp   #$bf             ; ? : the help screen
              beq   :thelp
+             cmp   #$af             ; / : jump to a name
+             beq   :tfind
              jmp   :key
 
 *--- the handlers are further off than a branch reaches
@@ -105,6 +108,7 @@ MAINLOOP     jsr   DRAWSCREEN
 :tcpy        jmp   :copy
 :tmkdir      jmp   :mkdir
 :thelp       jmp   :help
+:tfind       jmp   :find
 
 :tab         lda   PANEL
              eor   #$01
@@ -321,6 +325,18 @@ MAINLOOP     jsr   DRAWSCREEN
 :help        jsr   HELPSCR
              jmp   MAINLOOP
 
+*--- / jumps to a name. It cannot be a bare letter, which is what section 4
+*    imagined: C L R D N S and Q are commands, and a jump that worked on
+*    nineteen letters out of twenty-six would be worse than none. Typing a
+*    prefix is better for a long listing in any case -- one key gets you to
+*    the C's, three gets you to the file.
+:find        ldx   PANSEL
+             lda   PCOUNT,x
+             bne   *+5
+             jmp   :key
+             jsr   FINDCMD
+             jmp   MAINLOOP
+
 QUITPARM     dfb   $04
              dfb   $00
              da    $0000
@@ -436,7 +452,7 @@ LOCKCMD      jsr   TGTINIT
 * RENCMD -- rename the entry under the cursor
 *--------------------------------------
 RENCMD       lda   #$00
-             sta   PRMDIR           ; this prompt asks for a file name
+             sta   PRMMODE           ; this prompt asks for a file name
              ldx   PANSEL
              lda   PCURSEL,x
              pha
@@ -532,6 +548,182 @@ MKDIRCMD     lda   #$00
              jmp   SAYMSG
 
 *--------------------------------------
+* FINDCMD -- move the cursor to the first name beginning with what is typed
+*--------------------------------------
+FINDCMD      lda   #$02
+             sta   PRMMODE
+             lda   #$00
+             sta   PROMPT
+:show        jsr   DRAWENTRIES      ; the cursor is seen to move as you type
+             jsr   FOCUS
+             jsr   DRAWFIND
+:key         lda   KBD
+             bpl   :key
+             sta   KEYCHR
+             sta   KBDSTRB
+             lda   KEYCHR
+             cmp   #$8d             ; RET: stay where it landed
+             beq   :done
+             cmp   #$9b             ; ESC: the same, there is nothing to undo
+             beq   :done
+             cmp   #$88
+             beq   :rub
+             cmp   #$ff
+             beq   :rub
+             cmp   #$a0
+             bcc   :key
+             ldx   PROMPT
+             cpx   #$0f
+             bcs   :key
+             inx
+             sta   PROMPT,x
+             stx   PROMPT
+             jsr   FINDPFX
+             jmp   :show
+:rub         ldx   PROMPT
+             beq   :key
+             dex
+             stx   PROMPT
+             jsr   FINDPFX
+             jmp   :show
+:done        lda   #$00
+             sta   PRMMODE
+             rts
+
+*--------------------------------------
+* FINDPFX -- put the cursor on the first name starting with PROMPT
+*
+* From the top of the listing every time, so that rubbing a letter out goes
+* back to where the shorter prefix would have taken you.
+*--------------------------------------
+FINDPFX      lda   PROMPT
+             beq   :none
+             lda   #$00
+             sta   IDX
+:each        ldx   PANSEL
+             lda   IDX
+             cmp   PCOUNT,x
+             bcs   :none
+             jsr   NAMEAT
+             jsr   PFXMATCH
+             bcc   :hit
+             inc   IDX
+             jmp   :each
+:hit         ldx   PANSEL
+             lda   IDX
+             sta   PCURSEL,x
+             jmp   SCROLLTO
+:none        rts
+
+*--- PFXMATCH -- carry clear if the name at NAMPTR starts with PROMPT
+PFXMATCH     ldy   #$00
+             lda   (NAMPTR),y
+             cmp   PROMPT
+             bcc   :no              ; shorter than the prefix
+             ldy   PROMPT
+:loop        lda   (NAMPTR),y
+             jsr   UPCHAR
+             sta   TMPC
+             lda   PROMPT,y
+             jsr   UPCHAR
+             cmp   TMPC
+             bne   :no
+             dey
+             bne   :loop
+             clc
+             rts
+:no          sec
+             rts
+
+*--- UPCHAR -- A folded to plain upper case, whichever it arrived as
+UPCHAR       and   #$7f
+             cmp   #$61             ; 'a'
+             bcc   :done
+             cmp   #$7b             ; past 'z'
+             bcs   :done
+             sec
+             sbc   #$20
+:done        rts
+
+*--------------------------------------
+* SCROLLTO -- bring the cursor into view, wherever it has jumped to
+*--------------------------------------
+SCROLLTO     ldx   PANSEL
+             lda   PCURSEL,x
+             cmp   PTOP,x
+             bcs   :below
+             sta   PTOP,x           ; above the window
+             rts
+:below       sec
+             sbc   PTOP,x
+             cmp   #PANELROWS
+             bcc   :done
+             lda   PCURSEL,x        ; below it: put the cursor on the last row
+             sec
+             sbc   #PANELROWS-1
+             sta   PTOP,x
+:done        rts
+
+DRAWFIND     jsr   CLRBUF
+             lda   #<MFIND
+             ldy   #>MFIND
+             jsr   SETSTR
+             ldx   #$00
+             jsr   BUFSTR
+             ldx   #$06
+             jsr   PROMPTAIL
+             lda   #STATROW
+             jmp   DRAWLINE
+
+MFIND        asc   "FIND: "
+             dfb   $00
+
+*--------------------------------------
+* SPLASH -- who this is, while the first volume list is being read
+*
+* Not dismissed by a key: it is there to fill the wait, and the panels take
+* its place as soon as there is something to draw. On a floppy that wait is
+* long enough to wonder whether the machine is doing anything.
+*--------------------------------------
+SPLASH       jsr   CLRSCRN
+             lda   #$00
+             sta   ROWN
+:line        lda   ROWN
+             asl
+             tax
+             lda   SPLPTR+1,x
+             beq   :done
+             pha
+             lda   SPLPTR,x
+             sta   STRPTR
+             pla
+             sta   STRPTR+1
+             jsr   CLRBUF
+             jsr   CENTRE
+             jsr   BUFSTR
+             ldx   ROWN
+             lda   SPLROW,x
+             jsr   DRAWLINE
+             inc   ROWN
+             jmp   :line
+:done        rts
+
+SPLROW       dfb   8,10,12,14,19
+SPLPTR       da    SP0,SP1,SP2,SP3,SP4
+             da    $0000
+
+SP0          asc   "ZipFiler"
+             dfb   $00
+SP1          asc   "a file manager for the Apple //e"
+             dfb   $00
+SP2          asc   "ProDOS 8, eighty columns, two panels"
+             dfb   $00
+SP3          asc   "version 0.1"
+             dfb   $00
+SP4          asc   "reading the volumes..."
+             dfb   $00
+
+*--------------------------------------
 * HELPSCR -- a screenful, until a key is pressed
 *--------------------------------------
 HELPSCR      jsr   CLRSCRN
@@ -595,7 +787,7 @@ H14          asc   "  L        lock, or unlock if all are locked"
              dfb   $00
 H15          asc   "  R  D  N  rename, delete, new directory"
              dfb   $00
-H16          asc   "  Q        back to ProDOS"
+H16          asc   "  /  Q     find a name, and quit"
              dfb   $00
 H17          asc   "                         press any key"
              dfb   $00
@@ -808,7 +1000,7 @@ PROMPTIN     jsr   DRAWPROMPT
 * DRAWPROMPT -- the status row, holding what has been typed so far
 *--------------------------------------
 DRAWPROMPT   jsr   CLRBUF
-             lda   PRMDIR
+             lda   PRMMODE
              bne   :dir
              lda   #<MNEWNAME
              ldy   #>MNEWNAME
@@ -822,7 +1014,12 @@ DRAWPROMPT   jsr   CLRBUF
              ldx   #$00
              jsr   BUFSTR
              ldx   TMPC
-             lda   PROMPT
+             jsr   PROMPTAIL
+             lda   #STATROW
+             jmp   DRAWLINE
+
+*--- PROMPTAIL -- what has been typed, and a caret after it, from column X
+PROMPTAIL    lda   PROMPT
              beq   :caret
              sta   TMPB
              ldy   #$01
@@ -835,8 +1032,7 @@ DRAWPROMPT   jsr   CLRBUF
              bne   :copy
 :caret       lda   #$20             ; an inverse space, so there is a cursor
              sta   LINEBUF,x
-             lda   #STATROW
-             jmp   DRAWLINE
+             rts
 
 *--------------------------------------
 * SAYWORK -- put "working" up BEFORE the thing that takes the time
@@ -859,11 +1055,11 @@ SAYWORK      jsr   CLRBUF
 * PROMPTDIR -- PROMPTIN, but labelled for a directory
 *--------------------------------------
 PROMPTDIR    lda   #$01
-             sta   PRMDIR
+             sta   PRMMODE
              jsr   PROMPTIN
              php
              lda   #$00
-             sta   PRMDIR
+             sta   PRMMODE
              plp
              rts
 
@@ -875,6 +1071,15 @@ SAYMSG       sta   MSGPTR
              sty   MSGPTR+1
              lda   #$01
              sta   MSGON
+             sta   MSGNUM
+             rts
+
+*--- SAYMSG2 -- a count, a phrase, and a second count after it
+SAYMSG2      sta   MSGPTR
+             sty   MSGPTR+1
+             lda   #$01
+             sta   MSGON
+             lda   #$02
              sta   MSGNUM
              rts
 
@@ -1230,6 +1435,7 @@ DRAWSTATUS   jsr   CLRBUF
              beq   :counts
              lda   MSGNUM
              beq   :textonly
+             pha
              lda   MSGN
              sta   NUMLO
              lda   #$00
@@ -1240,6 +1446,23 @@ DRAWSTATUS   jsr   CLRBUF
              ldy   MSGPTR+1
              jsr   SETSTR
              ldx   #$06
+             jsr   BUFSTR
+             pla
+             cmp   #$02             ; a second number goes after the phrase
+             beq   *+5              ; a second number goes after the phrase
+             jmp   :draw
+             stx   TMPA             ; BUFSTR left X one past the phrase
+             inc   TMPA
+             lda   MSGN2
+             sta   NUMLO
+             lda   #$00
+             sta   NUMHI
+             jsr   PUTNUM
+             lda   #<MFILESW
+             ldy   #>MFILESW
+             jsr   SETSTR
+             ldx   TMPA
+             inx
              jsr   BUFSTR
              jmp   :draw
 :textonly    lda   MSGPTR
@@ -1358,9 +1581,11 @@ MMKERR       asc   "ProDOS would not; error code"
              dfb   $00
 MWORKING     asc   "working"
              dfb   $00
+MFILESW      asc   "files"
+             dfb   $00
 MDIRNAME     asc   "NEW DIRECTORY: "
              dfb   $00
-HINTTXT      asc   "SPC tag  RET open  C opy  L ock  R name  D el  N ew  S wap  Q uit  ? help"
+HINTTXT      asc   "SPC tag  RET open  C opy  L ock  R name  D el  N ew  S wap  / find  Q uit  ?"
              dfb   $00
 
 *--- mutable storage
@@ -1383,7 +1608,7 @@ MSGON        ds    1                ; a message owns the status row
 MSGNUM       ds    1                ; and whether it has a count in front
 MSGN         ds    1
 MSGPTR       ds    2
-PRMDIR       ds    1                ; the prompt is asking for a directory
+PRMMODE      ds    1                ; 0 a file name, 1 a directory, 2 a find
              dend
 
 *--- The rest emit code, and $2000 belongs to START.

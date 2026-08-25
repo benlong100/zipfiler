@@ -692,7 +692,9 @@ k key "down arrow"                     # onto DOCS
 k text "C"
 "$VII" settle 4 >/dev/null
 snapshot
-assert_row "three files went with it"             22 "3 copied"
+# one thing was asked for -- a directory -- and it came to three files
+assert_row "one thing was asked for"              22 "1 copied"
+assert_row "and it came to three files"           22 "3 files"
 assert_row "and the directory is on the other side" 2 "DOCS"
 
 eject_now

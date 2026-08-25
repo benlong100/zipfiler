@@ -23,6 +23,7 @@ CPYCMD       lda   #$00
              sta   NDONE
              sta   NSKIP
              sta   NFAIL
+             sta   NITEM
 
 *--- The same directory in both panels would mean copying a file onto itself.
 *    Easy to arrange, and nothing good comes of it.
@@ -35,6 +36,14 @@ CPYCMD       lda   #$00
 :start       lda   #$00
              jsr   SELPANEL         ; targets always come from the left
              jsr   TGTINIT
+
+*--- How many things were asked for, as against how many files that turns out
+*    to be. A tagged directory is one thing to the writer and a dozen files to
+*    the program, and the progress line has to speak the writer's language.
+             lda   NTAG
+             bne   :havetot
+             lda   #$01             ; no tags: the cursor line, so one thing
+:havetot     sta   NTOTAL
 :each        jsr   TGTNEXT
              bcs   :done
 
@@ -45,6 +54,8 @@ CPYCMD       lda   #$00
              bne   :file
              jsr   CPYPATHS
              jsr   CPYTREE
+             inc   NITEM
+             jsr   SHOWPROG
              lda   CPYSTOP
              beq   :next
              jmp   :done
@@ -56,6 +67,8 @@ CPYCMD       lda   #$00
              bne   :done            ; the writer asked to stop
              jmp   :next
 :ok          inc   NDONE
+             inc   NITEM
+             jsr   SHOWPROG
 :next        lda   #$00
              jsr   SELPANEL         ; CPYPATHS left the right panel chosen
              jmp   :each
@@ -311,22 +324,36 @@ CPYSAY       lda   NFAIL
              jmp   SAYMSG
 :nofail      lda   NSKIP
              beq   :plain
-             lda   NDONE
+             lda   NITEM
              sta   MSGN
              lda   #<MCPYSOME
              ldy   #>MCPYSOME
              jmp   SAYMSG
-:plain       lda   NDONE
+
+*--- The count is what was ASKED FOR, not how many files it came to. Those
+*    differ the moment a directory is tagged, and reporting the second while
+*    the writer counted the first reads as a bug.
+:plain       lda   NITEM
              sta   MSGN
+             lda   NDONE
+             cmp   NITEM
+             bne   :andfiles
              lda   #<MCOPIED
              ldy   #>MCOPIED
              jmp   SAYMSG
+:andfiles    lda   NDONE
+             sta   MSGN2
+             lda   #<MCOPIEDF
+             ldy   #>MCOPIEDF
+             jmp   SAYMSG2
 
 MSAMEDIR     asc   "both panels are the same directory"
              dfb   $00
 MOVER        asc   "already there.  O verwrite, S kip, ESC to stop"
              dfb   $00
 MCOPIED      asc   "copied"
+             dfb   $00
+MCOPIEDF     asc   "copied, and that came to"
              dfb   $00
 MCPYSOME     asc   "copied; the rest were skipped"
              dfb   $00
@@ -337,6 +364,9 @@ MCPYFAIL     asc   "could not be copied"
              dum   $1492
 OVERW        ds    1                ; what was decided about existing files
 CPYSTOP      ds    1                ; the writer asked to stop
+NITEM        ds    1                ; things asked for that are finished
+NTOTAL       ds    1                ; and how many were asked for
+MSGN2        ds    1                ; a second number for the status row
              dend
 
 *--------------------------------------
@@ -594,26 +624,47 @@ CHECKSTOP    lda   KBD
 *--------------------------------------
 SHOWPROG     jsr   CLRBUF
              jsr   PANELBAR
-             lda   NDONE
+             lda   NITEM
              sta   NUMLO
              lda   #$00
              sta   NUMHI
              sta   TMPA
              jsr   PUTNUM
-             lda   #<MPROG
-             ldy   #>MPROG
+             lda   #<MOF
+             ldy   #>MOF
              jsr   SETSTR
              ldx   #$06
+             jsr   BUFSTR
+             lda   NTOTAL
+             sta   NUMLO
+             lda   #$00
+             sta   NUMHI
+             lda   #$09
+             sta   TMPA
+             jsr   PUTNUM
+             lda   NDONE
+             sta   NUMLO
+             lda   #$00
+             sta   NUMHI
+             lda   #$10
+             sta   TMPA
+             jsr   PUTNUM
+             lda   #<MFILES
+             ldy   #>MFILES
+             jsr   SETSTR
+             ldx   #$16
              jsr   BUFSTR
              lda   #STATROW
              jmp   DRAWLINE
 
-MPROG        asc   "copied so far;  ESC to stop"
+MOF          asc   "of"
+             dfb   $00
+MFILES       asc   "files.  ESC to stop"
              dfb   $00
 
 MAXDEEP      equ   8
 
-             dum   $1494
+             dum   $1498
 CDEPTH       ds    1                ; how far down the tree
 CBLK         ds    1                ; which block of this directory
 CENT         ds    1                ; and which entry in it
