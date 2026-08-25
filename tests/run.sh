@@ -778,7 +778,7 @@ k text "?"
 snapshot
 assert_row "the help screen comes up"             0 "A FILE MANAGER FOR PRODOS 8"
 assert_row "it lists the keys"                    5 "ARROWS"
-assert_row "and says how to leave"               18 "press any key"
+assert_row "and says how to leave"               19 "press any key"
 
 k text " "
 "$VII" settle 2 >/dev/null
@@ -909,6 +909,38 @@ k text "M"
 snapshot
 assert_row "a locked file is not moved either"   22 "directories and locked"
 assert_row "and it is still there, still locked"  4 "*README.TXT"
+fi
+
+#--------------------------------------
+# A, which is also the only way to clear a set without leaving the directory.
+#--------------------------------------
+if section "tag all"; then
+fresh_fixture
+reboot
+k key "down arrow"; k line ""          # into /ZIPFILER
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "nothing tagged to begin with"        22 "entries"
+
+k text "A"
+"$VII" settle 2 >/dev/null
+snapshot
+assert_left "the first is tagged"                 2 "> ZIPFILER.SYSTEM"
+assert_left "and the last"                        6 "> PRODOS"
+assert_row  "and the count is the whole listing" 22 "5 tagged"
+
+k text "A"
+"$VII" settle 2 >/dev/null
+snapshot
+assert_noleft "pressing it again clears them"     2 ">"
+assert_row    "and the status says so"           22 "entries"
+
+# and it acts on the focused panel, not both
+k text "A"
+k ctrl I
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "the other panel is untouched"        22 "entries"
 fi
 
 #--------------------------------------

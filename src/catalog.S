@@ -422,6 +422,37 @@ TAGTST       jsr   TAGBIT
              and   TMPB
              rts
 
+*--- TAGSET -- turn entry A's tag on, whatever it was
+TAGSET       jsr   TAGBIT
+             lda   (PTAGS),y
+             ora   TMPB
+             sta   (PTAGS),y
+             rts
+
+*--------------------------------------
+* TAGALL -- tag the whole listing, or clear it if it is tagged already
+*
+* The same shape as L: one key, and it does the thing that is not already
+* true. It is also the only way to clear a set without leaving the directory,
+* which is why it toggles rather than simply tagging.
+*--------------------------------------
+TAGALL       jsr   TAGSTATS
+             ldx   PANSEL
+             lda   NTAG
+             cmp   PCOUNT,x
+             beq   :clear           ; every one already: clear them instead
+             lda   #$00
+             sta   IDX
+:set         ldx   PANSEL
+             lda   IDX
+             cmp   PCOUNT,x
+             bcs   :done
+             jsr   TAGSET
+             inc   IDX
+             jmp   :set
+:done        rts
+:clear       jmp   TAGNONE
+
 *--- TAGNONE -- clear every tag in the chosen panel. Tags belong to a listing,
 *    so they go when the listing does.
 TAGNONE      lda   #$00

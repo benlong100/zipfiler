@@ -93,6 +93,10 @@ MAINLOOP     jsr   DRAWSCREEN
              beq   :tfind
              cmp   #$cd             ; M, either case: move
              beq   :tmove
+             cmp   #$c1             ; A, either case: tag the lot
+             beq   :tall
+             cmp   #$e1
+             beq   :tall
              cmp   #$ed
              beq   :tmove
              jmp   :key
@@ -114,6 +118,7 @@ MAINLOOP     jsr   DRAWSCREEN
 :thelp       jmp   :help
 :tfind       jmp   :find
 :tmove       jmp   :move
+:tall        jmp   :tagall
 
 :tab         lda   PANEL
              eor   #$01
@@ -353,6 +358,15 @@ MAINLOOP     jsr   DRAWSCREEN
              beq   *+5
              jmp   :cpyvol
              jsr   MOVECMD
+             jmp   MAINLOOP
+
+*--- A. Tag the whole listing, or clear it if it is tagged already. Not on the
+*    command bar -- there is no room -- but it is on the help page.
+:tagall      ldx   PANSEL
+             lda   PCOUNT,x
+             bne   *+5
+             jmp   :key
+             jsr   TAGALL
              jmp   MAINLOOP
 
 QUITPARM     dfb   $04
@@ -772,7 +786,7 @@ HELPSCR      jsr   CLRSCRN
              rts
 
 HELPTBL      da    H0,H1,H2,H3,H4,H5,H6,H7,H8,H9
-             da    H10,H11,H12,H13,H14,H15,H15B,H16,H17
+             da    H10,H10B,H11,H12,H13,H14,H15,H15B,H16,H17
              da    $0000
 
 H0           asc   "ZIPFILER -- A FILE MANAGER FOR PRODOS 8"
@@ -794,6 +808,8 @@ H8           asc   "  LEFT     up a level; out of a volume root"
 H9           asc   "           it lists the volumes themselves"
              dfb   $00
 H10          asc   "  SPACE    tag; commands act on the tagged"
+             dfb   $00
+H10B         asc   "  A        tag all, or clear if all are"
              dfb   $00
 H11          asc   "           set, or on the cursor line"
              dfb   $00

@@ -192,7 +192,14 @@ message. ProDOS will do it; the command has not been written.
 ## 6. Tagging
 
 `SPC` tags the entry under the cursor and moves down one, so tagging a run is
-tapping the space bar.
+tapping the space bar. `A` tags the whole listing -- **or clears it if it is
+already tagged**, which is the same shape as `L`: one key that does whichever
+thing is not already true. It toggles rather than simply tagging because
+otherwise there is no way to clear a set at all without leaving the directory,
+which would discard the tags as a side effect of navigating rather than
+because anyone asked.
+
+`A` acts on the focused panel alone. No command acts on both.
 
 **A command acts on the tagged set if there is one, and on the cursor line if
 there is not.** That removes any question of mode: there is never a state to be
