@@ -79,8 +79,20 @@ CLOSEREF     dfb   $00
 *--- ProDOS wants its own 1K buffer page-aligned, and one directory block to
 *    read into. Neither is ours to put anywhere else.
              dum   $0800
-IOBUF        ds    1024
+IOBUF        ds    1024             ; the source of a copy, and directories
 DIRBUF       ds    512
+             dend
+
+*--- the destination of a copy, page aligned as ProDOS insists
+             dum   $1000
+IOBUF2       ds    1024
+             dend
+
+*--- and what is carried between them. Auxiliary memory belongs to /RAM here
+*    -- design.md section 8 -- so this lives in main, above the panels.
+COPYSIZE     equ   $2000
+             dum   $8000
+COPYBUF      ds    COPYSIZE
              dend
 
 *--------------------------------------
@@ -93,6 +105,82 @@ DIRBUF       ds    512
 * write a file's block count into a reserved field, which is the kind of
 * mistake that is invisible until a directory is unreadable.
 *--------------------------------------
+*--------------------------------------
+* The calls a copy makes. It has both files open at once, so the source and
+* the destination each need their own 1K buffer and their own parameter
+* blocks -- sharing them would mean rebuilding one between every read and
+* every write.
+*--------------------------------------
+CREATEF      jsr   MLI
+             dfb   $c0
+             da    CREPARM
+             sta   MLIERR
+             rts
+
+COPENSF      jsr   MLI
+             dfb   $c8
+             da    COPENS
+             sta   MLIERR
+             rts
+
+COPENDF      jsr   MLI
+             dfb   $c8
+             da    COPEND
+             sta   MLIERR
+             rts
+
+CREADF       jsr   MLI
+             dfb   $ca
+             da    CREADP
+             sta   MLIERR
+             rts
+
+CWRITEF      jsr   MLI
+             dfb   $cb
+             da    CWRITEP
+             sta   MLIERR
+             rts
+
+CCLOSEF      jsr   MLI
+             dfb   $cc
+             da    CCLOSEP
+             sta   MLIERR
+             rts
+
+CREPARM      dfb   $07
+             da    PATHNEW
+CREACCESS    dfb   $c3
+CRETYPE      dfb   $00
+CREAUX       dfb   $00,$00
+CRESTORE     dfb   $01              ; seedling; ProDOS grows it as needed
+CREDATE      dfb   $00,$00
+CRETIME      dfb   $00,$00
+
+COPENS       dfb   $03
+             da    PATHWORK
+             da    IOBUF
+SRCREF       dfb   $00
+
+COPEND       dfb   $03
+             da    PATHNEW
+             da    IOBUF2
+DSTREF       dfb   $00
+
+CREADP       dfb   $04
+CREADREF     dfb   $00
+             da    COPYBUF
+             da    COPYSIZE
+CGOT         dfb   $00,$00
+
+CWRITEP      dfb   $04
+CWRITEREF    dfb   $00
+             da    COPYBUF
+CWANT        dfb   $00,$00
+CPUT         dfb   $00,$00
+
+CCLOSEP      dfb   $01
+CCLOSEREF    dfb   $00
+
 DESTROYF     jsr   MLI
              dfb   $c1
              da    DESTPARM

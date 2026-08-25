@@ -116,6 +116,16 @@ assert_identical() {
     if [ "$out" = "identical" ]; then ok "$1"; else bad "$1" "$out"; fi
 }
 
+# left panel in /FILER, right panel in /FILER/DOCS, focus back on the left
+setup_copy() {
+    k key "down arrow"; k line ""      # left into /FILER
+    k ctrl I                           # focus the right panel
+    k key "down arrow"; k line ""      # right into /FILER
+    k key "down arrow"; k line ""      # and on into DOCS
+    k ctrl I                           # focus back to the left
+    "$VII" settle 2 >/dev/null
+}
+
 # the prompt opens pre-filled with the existing name
 prompt_clear() { local i; for i in $(seq 1 15); do "$VII" key "left arrow" >/dev/null; done; sleep 0.3; }
 
@@ -559,6 +569,140 @@ k text "Y"
 snapshot
 assert_row "both are gone"                       22 "2 deleted"
 assert_norow "the listing is empty"               2 "CH"
+fi
+
+#--------------------------------------
+# C, always left to right.
+#
+# The test that matters is not that a file appears but that it is the same
+# file: extracted from the image and compared byte for byte against its
+# source. A copy that truncated, or that wrote the wrong type, would look
+# perfectly right in the listing.
+#--------------------------------------
+if section "copy"; then
+fresh_fixture
+reboot
+setup_copy
+snapshot
+assert_row "left panel is the root"               0 "/FILER "
+assert_row "right panel is DOCS"                  0 "/FILER/DOCS"
+
+k key "down arrow"; k key "down arrow"   # onto README.TXT
+k text "C"
+"$VII" settle 3 >/dev/null
+snapshot
+assert_row "it says it copied one"               22 "1 copied"
+assert_row "and it is in the right panel"         4 "README.TXT"
+
+eject_now
+"$ROOT/tools/ac" -g "$FIXTURE" README.TXT      > "$ROOT/build/src.bin" 2>/dev/null
+"$ROOT/tools/ac" -g "$FIXTURE" DOCS/README.TXT > "$ROOT/build/dst.bin" 2>/dev/null
+if cmp -s "$ROOT/build/src.bin" "$ROOT/build/dst.bin" && [ -s "$ROOT/build/dst.bin" ]; then
+    ok "and it is the same file, byte for byte"
+else
+    bad "and it is the same file, byte for byte" "$(ls -l "$ROOT"/build/src.bin "$ROOT"/build/dst.bin)"
+fi
+# the same type and the same size, which a listing would show but a copy
+# could still get wrong
+srcline=$("$ROOT/tools/ac" -l "$FIXTURE" | grep -c "README.TXT TXT 001")
+if [ "$srcline" = "2" ]; then
+    ok "both are TXT and one block"
+else
+    bad "both are TXT and one block" "$("$ROOT/tools/ac" -l "$FIXTURE" | grep README)"
+fi
+fi
+
+#--------------------------------------
+# Asked once for the batch, not once a file.
+#--------------------------------------
+if section "copy overwrite"; then
+fresh_fixture
+reboot
+setup_copy
+k key "down arrow"; k key "down arrow"
+k text "C"                             # the first copy
+"$VII" settle 3 >/dev/null
+k text "C"                             # and again, so it is already there
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "it asks what to do"                  22 "already there"
+
+k text "S"
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "S skips it"                          22 "the rest were skipped"
+
+k text "C"
+k text "O"
+"$VII" settle 3 >/dev/null
+snapshot
+assert_row "O overwrites it"                     22 "1 copied"
+eject_now
+if "$ROOT/tools/ac" -g "$FIXTURE" DOCS/README.TXT 2>/dev/null | grep -q "read me"; then
+    ok "and what is there is still right"
+else
+    bad "and what is there is still right" "the overwritten copy does not read"
+fi
+fi
+
+#--------------------------------------
+# Copying a file onto itself is easy to arrange and never wanted.
+#--------------------------------------
+if section "copy refuses the same directory"; then
+fresh_fixture
+reboot
+k key "down arrow"; k line ""          # left into /FILER
+k ctrl I
+k key "down arrow"; k line ""          # right into /FILER too
+k ctrl I
+"$VII" settle 2 >/dev/null
+k text "C"
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "it says so"                          22 "same directory"
+eject_now
+assert_identical "and writes nothing"
+fi
+
+#--------------------------------------
+# A directory needs the recursion that is not built. It must say so rather
+# than half-copy itself -- design.md section 7.
+#--------------------------------------
+if section "copy skips a directory"; then
+fresh_fixture
+reboot
+setup_copy
+k key "down arrow"                     # onto DOCS
+k text "C"
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "nothing was copied"                  22 "0 copied"
+assert_row "and it was skipped, not failed"      22 "skipped"
+fi
+
+#--------------------------------------
+# A tagged set, which is what the command is for.
+#--------------------------------------
+if section "copy a set"; then
+fresh_fixture
+reboot
+setup_copy
+k key "down arrow"; k key "down arrow" # onto README.TXT
+k text " "                             # tag it; cursor steps to DATA.BIN
+k text " "                             # tag that too
+snapshot
+assert_row "two tagged"                          22 "2 tagged"
+k text "C"
+"$VII" settle 3 >/dev/null
+snapshot
+assert_row "both went"                           22 "2 copied"
+eject_now
+if "$ROOT/tools/ac" -g "$FIXTURE" DOCS/DATA.BIN >/dev/null 2>&1 &&
+   "$ROOT/tools/ac" -g "$FIXTURE" DOCS/README.TXT >/dev/null 2>&1; then
+    ok "and both are on the other side"
+else
+    bad "and both are on the other side" "$("$ROOT/tools/ac" -l "$FIXTURE" | sed -n '2,8p')"
+fi
 fi
 
 #--------------------------------------

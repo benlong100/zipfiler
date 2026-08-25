@@ -8,10 +8,24 @@ so the build asks this question every time.
 """
 import re, sys, glob, os
 
-SIZES = {"SCRW": 80}
+def equates(root):
+    """ds sizes are often named. Resolve the simple ones from the source."""
+    out = {}
+    for path in glob.glob(os.path.join(root, "src", "*.S")):
+        for line in open(path):
+            m = re.match(r"(\S+)\s+equ\s+\$?([0-9a-fA-F]+)\s*$", line.rstrip())
+            if m:
+                txt = m.group(2)
+                base = 16 if "$" in line.split("equ")[1] else 10
+                try:
+                    out[m.group(1)] = int(txt, base)
+                except ValueError:
+                    pass
+    return out
 
 def main():
     root = os.path.join(os.path.dirname(__file__), "..")
+    SIZES = equates(root)
     spans = []
     for path in sorted(glob.glob(os.path.join(root, "src", "*.S"))):
         addr = None

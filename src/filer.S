@@ -61,6 +61,10 @@ MAINLOOP     jsr   DRAWSCREEN
              beq   :tren
              cmp   #$c4             ; D, either case: delete
              beq   :tdel
+             cmp   #$c3             ; C, either case: copy, left to right
+             beq   :tcpy
+             cmp   #$e3
+             beq   :tcpy
              cmp   #$e4
              beq   :tdel
              cmp   #$f2
@@ -83,6 +87,7 @@ MAINLOOP     jsr   DRAWSCREEN
 :tlock       jmp   :lock
 :tren        jmp   :rename
 :tdel        jmp   :delete
+:tcpy        jmp   :copy
 
 :tab         lda   PANEL
              eor   #$01
@@ -263,6 +268,23 @@ MAINLOOP     jsr   DRAWSCREEN
              jmp   MAINLOOP
 :delvol      lda   #<MDELVOL
              ldy   #>MDELVOL
+             jsr   SAYTEXT
+             jmp   MAINLOOP
+
+*--- C. Always left to right, so the direction never has to be said.
+:copy        lda   PINVOL           ; the left panel, which is where a copy
+             beq   *+5              ; comes from
+             jmp   :cpyvol
+             lda   PCOUNT
+             bne   *+5
+             jmp   :key
+             lda   PINVOL+1         ; and the right, which is where it goes
+             beq   *+5
+             jmp   :cpyvol
+             jsr   CPYCMD
+             jmp   MAINLOOP
+:cpyvol      lda   #<MCPYVOL
+             ldy   #>MCPYVOL
              jsr   SAYTEXT
              jmp   MAINLOOP
 
@@ -1138,7 +1160,9 @@ MDELERR      asc   "ProDOS refused; error code"
              dfb   $00
 MNOTEMPTY    asc   "a directory has to be empty first"
              dfb   $00
-HINTTXT      asc   "SPC tag  TAB panel  RET open  L ock  R name  D el  S wap"
+MCPYVOL      asc   "both panels need to be in a directory"
+             dfb   $00
+HINTTXT      asc   "SPC tag  RET open  C opy  L ock  R name  D el  S wap  TAB"
              dfb   $00
 
 *--- mutable storage
@@ -1167,3 +1191,4 @@ MSGPTR       ds    2
              put   screen
              put   prodos
              put   catalog
+             put   copy

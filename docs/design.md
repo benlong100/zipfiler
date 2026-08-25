@@ -225,6 +225,25 @@ compare confirms nothing at all was written.
 appear in the listing because they have to be navigable, so they can be tagged,
 so somebody will try.
 
+**As built: `C`.** Both files are open at once, so the source and destination
+each have their own 1K ProDOS buffer and their own parameter blocks; 8K of
+main memory is carried between them. `CREATE` takes the source's type, aux
+type and creation date, and `SET_FILE_INFO` puts the modification date and the
+access back afterwards -- the destination is made unlocked and only protected
+once there is something there to protect.
+
+A write that fails destroys its own output before reporting, which is the
+whole of §7's argument: the free space check is deferred, so a full disk
+arrives as a `WRITE` error partway through, and what it would otherwise leave
+behind is a truncated file with a plausible name and the right type.
+
+The overwrite question is asked once for the batch -- overwrite, skip, or
+stop -- and the answer is remembered for the rest of it.
+
+The same directory in both panels is refused outright rather than checked file
+by file. It is the only way to copy a file onto itself and it is easy to
+arrange with `S`.
+
 ## 8. Memory
 
 A `SYS` file loads at $2000 and is entered there. Provisional, and the copy
