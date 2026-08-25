@@ -120,9 +120,18 @@ also drops the sort code, the index array it would have needed, and the only
 part of building a listing that had a per-directory time cost.
 
 What sorting would actually have been for — finding one file among two hundred
-— is better served by **letter-jump**: press a letter and the cursor goes to
-the next entry starting with it, press again for the one after. That works the
-same in any order and is quicker to use than reading a sorted list.
+— is better served by jumping to a name.
+
+**As built, and not as designed.** A bare letter cannot do it: `C L R D N S`
+and `Q` are commands, so a bare-letter jump would work on nineteen letters out
+of twenty-six, which is worse than none because you would learn it and then it
+would rename something. §4 was written before §5 chose bare letters and the two
+conflict.
+
+So it is `/`, and it takes a **prefix** rather than one letter, which is better
+for a long listing anyway: one key reaches the C's and three reaches the file.
+It searches from the top each time, so rubbing a letter out returns to where
+the shorter prefix led.
 
 ## 5. Commands
 
@@ -144,6 +153,8 @@ a two-panel manager already expects.
 | `D` | delete |
 | `S` | swap the panels |
 | `N` | a new directory |
+| `M` | move: copy across, then remove the original |
+| `/` | jump to a name |
 | `Q` | back to ProDOS |
 | `?` | help |
 
@@ -242,6 +253,25 @@ machine, error `$4E` -- so the program does not need its own guard, and says
 compare confirms nothing at all was written.
 
 **Copying a directory** takes everything inside it -- see §11, which is built.
+
+**Moving** is `M`: copy to the other panel, and only once it has arrived,
+destroy the original. If the copy succeeds and the removal does not it says
+so rather than claiming a move -- two copies is the safe failure, none is not.
+
+A same-volume move could instead relocate the directory entry itself: clear it
+in one directory, write it into the other, fix its `header_pointer` and the two
+`file_count`s, and the data blocks would never move at all. ProDOS 8 has no
+MOVE call and `RENAME` will not cross directories, so that means editing
+directory blocks by hand and growing the destination out of the volume bitmap
+when it is full -- which is the "freed somebody else's blocks" failure this
+whole harness exists to catch. Worth having later, with a test that moves a
+file and asserts **the bitmap did not change at all**, which is the signature
+proving no block was touched.
+
+`M` refuses a directory, because removing the source afterwards would need a
+recursive delete that is not built, and copying the tree while leaving the
+original behind would be pretending. It refuses a locked file for the reason
+`D` does.
 
 **As built: `C`.** Both files are open at once, so the source and destination
 each have their own 1K ProDOS buffer and their own parameter blocks; 8K of

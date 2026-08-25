@@ -648,6 +648,19 @@ TGTNEXT      lda   NTAG
 CAPPEND      ldy   #$00
              lda   (PBUF),y
              sta   DIRLEN
+
+*--- ProDOS stops at 64 characters and the buffer is 65 bytes long. Without
+*    this a deep enough tree writes past the end of it and on through
+*    whatever happens to follow -- and what follows PATHWORK is the block
+*    holding every panel's count and cursor.
+             lda   (NAMPTR),y
+             sec                    ; the name, the slash, and what is there
+             adc   DIRLEN
+             bcs   :toolong
+             cmp   #65
+             bcs   :toolong
+
+             lda   DIRLEN
              clc
              adc   PBUF
              sta   PDST
@@ -663,6 +676,27 @@ CAPPEND      ldy   #$00
              adc   TMPB
              ldy   #$00
              sta   (PBUF),y
+             clc
+             rts
+:toolong     sec
+             rts
+
+*--------------------------------------
+* TACKBOTH -- hang the name at NAMPTR on the source path and the destination
+*             path together. Carry set if either would grow too long, and
+*             neither is left half-done.
+*--------------------------------------
+TACKBOTH     jsr   SETPW
+             jsr   CAPPEND
+             bcs   :no
+             jsr   SETPN
+             jsr   CAPPEND
+             bcs   :undo
+             clc
+             rts
+:undo        jsr   SETPW
+             jsr   CTRIM
+:no          sec
              rts
 
 *--------------------------------------

@@ -466,10 +466,9 @@ CPYTREE      lda   #$00
              beq   :down
 
 *--- a file: hang its name on both paths, copy it, take it off again
-             jsr   SETPW
-             jsr   CAPPEND
-             jsr   SETPN
-             jsr   CAPPEND
+             jsr   TACKBOTH
+             bcc   *+5
+             jmp   :toodeep
              jsr   CPYONE
              bcc   :counted
              lda   CPYSTOP
@@ -482,10 +481,9 @@ CPYTREE      lda   #$00
              jmp   :next
 
 *--- a directory: go into it, and remember where we were
-:down        jsr   SETPW
-             jsr   CAPPEND
-             jsr   SETPN
-             jsr   CAPPEND
+:down        jsr   TACKBOTH
+             bcc   *+5
+             jmp   :toodeep
              jsr   MKDESTDIR
              bcs   :undown
              ldx   CDEPTH
@@ -504,6 +502,11 @@ CPYTREE      lda   #$00
              jmp   :block
 :undown      jsr   UNTACK
              inc   NFAIL
+             jmp   :next
+
+*--- the path would not fit. Count it and carry on with the rest, rather than
+*    writing past the end of a buffer to find out.
+:toodeep     inc   NFAIL
              jmp   :next
 
 :next        inc   CENT
@@ -672,3 +675,122 @@ LVLBLK       ds    MAXDEEP          ; where to resume, a level up
 LVLENT       ds    MAXDEEP
 NAMBUF       ds    16               ; a name taken out of DIRBUF before it goes
              dend
+
+*--------------------------------------
+* MOVECMD -- M, copy to the right panel and then take the source away
+*
+* Copy and delete, not a directory-entry relocation. A same-volume move could
+* be done by moving the entry itself -- clear it in one directory, write it
+* into the other, fix its header_pointer and the two file_counts -- and the
+* data blocks would never move at all. ProDOS 8 has no MOVE call and RENAME
+* will not cross directories, so that would mean editing directory blocks by
+* hand with READ_BLOCK and WRITE_BLOCK, and growing the destination directory
+* out of the volume bitmap when it is full. A mistake there is exactly the
+* "freed somebody else's blocks" failure the whole test harness exists for.
+*
+* So: copy, then destroy, out of two routines that are already proven and
+* already covered. It works across volumes and within one with no special
+* case. The fast path is worth having later, with a test that asserts the
+* bitmap did not change at all -- which is the signature that proves no block
+* was touched.
+*--------------------------------------
+MOVECMD      lda   #$00
+             sta   OVERW
+             sta   NDONE
+             sta   NSKIP
+             sta   NFAIL
+             sta   NITEM
+
+             jsr   SAMEDIR
+             bcc   :start
+             lda   #<MSAMEDIR
+             ldy   #>MSAMEDIR
+             jmp   SAYTEXT
+
+:start       lda   #$00
+             jsr   SELPANEL
+             jsr   TGTINIT
+             lda   NTAG
+             bne   :havetot
+             lda   #$01
+:havetot     sta   NTOTAL
+
+:each        jsr   TGTNEXT
+             bcs   :done
+
+*--- A directory would need its source tree taken away afterwards, and
+*    ProDOS will not destroy a directory with anything in it. Recursive
+*    delete is not built, so this says so rather than copying the tree and
+*    leaving the original behind pretending it moved.
+             ldy   TGTI
+             lda   (PTYPE),y
+             cmp   #$0f
+             bne   :notdir
+             inc   NSKIP
+             jmp   :next
+
+*--- and a locked file is not taken away either, for the same reason D will
+*    not take it: the lock is the writer's stated intent
+:notdir      ldy   TGTI
+             lda   (PACC),y
+             and   #$02
+             bne   :go
+             inc   NSKIP
+             jmp   :next
+
+:go          jsr   CPYPATHS
+             jsr   CPYONE
+             bcc   :arrived
+             lda   CPYSTOP
+             beq   :next
+             jmp   :done
+
+*--- it is there; only now is it safe to take the original away
+:arrived     jsr   DESTROYF
+             bcs   :halfway
+             inc   NDONE
+             inc   NITEM
+             jsr   SHOWPROG
+             jmp   :next
+:halfway     inc   NFAIL            ; copied but not removed, which is safe
+             jmp   :next
+
+:next        lda   #$00
+             jsr   SELPANEL
+             jmp   :each
+
+*--- both listings changed: one lost files and the other gained them
+:done        lda   #$01
+             jsr   SELPANEL
+             jsr   RESCAN
+             jsr   CLAMPSEL
+             lda   #$00
+             jsr   SELPANEL
+             jsr   RESCAN
+             jsr   CLAMPSEL
+
+             lda   NFAIL
+             beq   :nofail
+             sta   MSGN
+             lda   #<MMVFAIL
+             ldy   #>MMVFAIL
+             jmp   SAYMSG
+:nofail      lda   NSKIP
+             beq   :plain
+             lda   NITEM
+             sta   MSGN
+             lda   #<MMVSOME
+             ldy   #>MMVSOME
+             jmp   SAYMSG
+:plain       lda   NITEM
+             sta   MSGN
+             lda   #<MMOVED
+             ldy   #>MMOVED
+             jmp   SAYMSG
+
+MMOVED       asc   "moved"
+             dfb   $00
+MMVSOME      asc   "moved; directories and locked files were not"
+             dfb   $00
+MMVFAIL      asc   "copied but could not be removed:"
+             dfb   $00

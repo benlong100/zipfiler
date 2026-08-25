@@ -53,6 +53,31 @@ assert_row() {
     fi
 }
 
+# A row holds BOTH panels, so a bare substring check on one cannot tell which
+# side it found. These cut to a panel first. Three assertions were written
+# wrong before these existed.
+left_of()  { sed -n "$(($1+1))p" "$SCREEN" | cut -c1-39; }
+right_of() { sed -n "$(($1+1))p" "$SCREEN" | cut -c41-80; }
+
+assert_left() {
+    if [[ "$(left_of "$2")" == *"$3"* ]]; then ok "$1"; else
+        bad "$1" "left panel row $2 wanted: $3" "got: $(left_of "$2")"; fi
+}
+assert_noleft() {
+    if [[ "$(left_of "$2")" != *"$3"* ]]; then ok "$1"; else
+        bad "$1" "left panel row $2 should not contain: $3"; fi
+}
+assert_right() {
+    if [[ "$(right_of "$2")" == *"$3"* ]]; then ok "$1"; else
+        bad "$1" "right panel row $2 wanted: $3" "got: $(right_of "$2")"; fi
+}
+
+# on_image <path> -- is that file there? AppleCommander exits 0 even when it
+# prints "No match", so its exit code cannot be asked. This cost an hour.
+on_image() {
+    ! "$ROOT/tools/ac" -g "$FIXTURE" "$1" 2>&1 | grep -q "No match"
+}
+
 # assert_norow <name> <0-based row> <substring that must NOT be there>
 assert_norow() {
     local name="$1" row="$2" bad_s="$3" got
@@ -753,7 +778,7 @@ k text "?"
 snapshot
 assert_row "the help screen comes up"             0 "A FILE MANAGER FOR PRODOS 8"
 assert_row "it lists the keys"                    5 "ARROWS"
-assert_row "and says how to leave"               17 "press any key"
+assert_row "and says how to leave"               18 "press any key"
 
 k text " "
 "$VII" settle 2 >/dev/null
@@ -825,6 +850,65 @@ snapshot
 assert_row "and ESC abandons it"                 22 "left alone"
 eject_now
 assert_identical "neither wrote anything"
+fi
+
+#--------------------------------------
+# M. Copy across, then take the original away.
+#
+# The thing to check is not that it appeared on one side but that it is gone
+# from the other AND still readable -- a move that lost the file would leave
+# both listings looking entirely reasonable.
+#--------------------------------------
+if section "move"; then
+fresh_fixture
+reboot
+setup_copy
+k key "down arrow"; k key "down arrow"   # onto README.TXT
+"$VII" settle 2 >/dev/null
+k text "M"
+"$VII" settle 3 >/dev/null
+snapshot
+assert_row "it says it moved one"                22 "1 moved"
+assert_noleft "gone from the left panel"          4 "README.TXT"
+assert_right  "and arrived on the right"          4 "README.TXT"
+
+eject_now
+if on_image DOCS/README.TXT && "$ROOT/tools/ac" -g "$FIXTURE" DOCS/README.TXT 2>/dev/null | grep -q "read me"; then
+    ok "and it still reads at its new place"
+else
+    bad "and it still reads at its new place" "the moved file does not read"
+fi
+if on_image README.TXT; then
+    bad "and no longer exists at the old one" "the source is still there"
+else
+    ok "and no longer exists at the old one"
+fi
+fi
+
+#--------------------------------------
+# What M will not do. A directory would need its source tree removed
+# afterwards and recursive delete is not built; a locked file is not taken
+# away for the same reason D will not take it.
+#--------------------------------------
+if section "move refuses"; then
+fresh_fixture
+reboot
+setup_copy
+k key "down arrow"                     # onto DOCS, a directory
+k text "M"
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "a directory is not moved"            22 "directories and locked"
+assert_row "and is still there"                   3 "DOCS"
+
+k key "down arrow"                     # onto README.TXT
+k text "L"                             # lock it
+"$VII" settle 2 >/dev/null
+k text "M"
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "a locked file is not moved either"   22 "directories and locked"
+assert_row "and it is still there, still locked"  4 "*README.TXT"
 fi
 
 #--------------------------------------

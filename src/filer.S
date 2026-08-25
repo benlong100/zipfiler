@@ -91,6 +91,10 @@ MAINLOOP     jsr   DRAWSCREEN
              beq   :thelp
              cmp   #$af             ; / : jump to a name
              beq   :tfind
+             cmp   #$cd             ; M, either case: move
+             beq   :tmove
+             cmp   #$ed
+             beq   :tmove
              jmp   :key
 
 *--- the handlers are further off than a branch reaches
@@ -109,6 +113,7 @@ MAINLOOP     jsr   DRAWSCREEN
 :tmkdir      jmp   :mkdir
 :thelp       jmp   :help
 :tfind       jmp   :find
+:tmove       jmp   :move
 
 :tab         lda   PANEL
              eor   #$01
@@ -335,6 +340,19 @@ MAINLOOP     jsr   DRAWSCREEN
              bne   *+5
              jmp   :key
              jsr   FINDCMD
+             jmp   MAINLOOP
+
+*--- M. Copy to the right panel, then take the original away.
+:move        lda   PINVOL
+             beq   *+5
+             jmp   :cpyvol
+             lda   PCOUNT
+             bne   *+5
+             jmp   :key
+             lda   PINVOL+1
+             beq   *+5
+             jmp   :cpyvol
+             jsr   MOVECMD
              jmp   MAINLOOP
 
 QUITPARM     dfb   $04
@@ -754,7 +772,7 @@ HELPSCR      jsr   CLRSCRN
              rts
 
 HELPTBL      da    H0,H1,H2,H3,H4,H5,H6,H7,H8,H9
-             da    H10,H11,H12,H13,H14,H15,H16,H17
+             da    H10,H11,H12,H13,H14,H15,H15B,H16,H17
              da    $0000
 
 H0           asc   "ZIPFILER -- A FILE MANAGER FOR PRODOS 8"
@@ -786,6 +804,8 @@ H13          asc   "  S        swap the panels over"
 H14          asc   "  L        lock, or unlock if all are locked"
              dfb   $00
 H15          asc   "  R  D  N  rename, delete, new directory"
+             dfb   $00
+H15B         asc   "  M        move: copy across, then remove"
              dfb   $00
 H16          asc   "  /  Q     find a name, and quit"
              dfb   $00
