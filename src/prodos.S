@@ -35,3 +35,54 @@ ONLBUF       ds    256
              dum   $1410
 MLIERR       ds    1                ; the code from the last MLI call
              dend
+
+*--------------------------------------
+* OPENF / READF / CLOSEF -- reading a directory as a file
+*
+* A directory IS a file, so it opens and reads like one: 512 bytes a block,
+* four bytes of links then thirteen entries of thirty-nine.
+*--------------------------------------
+OPENF        jsr   MLI
+             dfb   $c8
+             da    OPENPARM
+             sta   MLIERR
+             rts
+
+READF        jsr   MLI
+             dfb   $ca
+             da    READPARM
+             sta   MLIERR
+             rts
+
+CLOSEF       jsr   MLI
+             dfb   $cc
+             da    CLOSEPARM
+             sta   MLIERR
+             rts
+
+OPENPARM     dfb   $03
+             da    PATHBUF          ; length-prefixed, LOW ascii
+             da    IOBUF            ; 1K, page aligned, ProDOS scribbles here
+OPENREF      dfb   $00              ; out: the reference number
+
+READPARM     dfb   $04
+READREF      dfb   $00
+             da    DIRBUF
+             da    $0200            ; one directory block
+XFERCNT      ds    2                ; out: how much actually came back
+
+CLOSEPARM    dfb   $01
+CLOSEREF     dfb   $00
+
+*--- ProDOS wants its own 1K buffer page-aligned, and one directory block to
+*    read into. Neither is ours to put anywhere else.
+             dum   $0800
+IOBUF        ds    1024
+DIRBUF       ds    512
+             dend
+
+*--- A pathname: a length byte then up to 64 characters, low ASCII, which is
+*    the one place on this machine where the high bit stays off.
+             dum   $1420
+PATHBUF      ds    65
+             dend

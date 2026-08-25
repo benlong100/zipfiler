@@ -29,6 +29,7 @@ TMPA         equ   $0a
 TMPB         equ   $0b
 NAMPTR       equ   $0c              ; 2 bytes, into the 4K name block
 TMPC         equ   $0e
+ENTPTR       equ   $10              ; 2 bytes, walking a directory block
 KEYCHR       equ   $18              ; last key read
 
 *--- The screen. Fixed at 80 columns: unlike the editor there is no 40 column

@@ -97,7 +97,8 @@ a tag costs a bit rather than a byte, and nothing is padded:
 | tag bitmap | ⅛ | 32 | 64 |
 | | **~21** | **~5.4K** | **~10.8K** |
 
-**Capped at 256 entries a panel.** A 5.25-inch volume is 280 blocks and cannot
+**Capped at 255 entries a panel**, so the count fits in a byte -- 256 was the
+design and the difference is not a real one. A 5.25-inch volume is 280 blocks and cannot
 physically hold 256 files with anything in them, and a volume directory is
 capped at 51 entries whatever the medium — so the cap never bites on a floppy
 image. It is only reachable in a large CFFA partition, and there it must be an

@@ -142,6 +142,21 @@ INVBUF       ldy   #SCRWM1
              rts
 
 *--------------------------------------
+* INVLEFT -- turn the left panel's columns of LINEBUF inverse
+*--------------------------------------
+INVLEFT      ldy   #LWIDTH-1
+:loop        lda   LINEBUF,y
+             bpl   :raw
+             and   #$7f
+             cmp   #$60
+             bcs   :keep
+             and   #$3f
+:keep        sta   LINEBUF,y
+:raw         dey
+             bpl   :loop
+             rts
+
+*--------------------------------------
 * Row base addresses. The 24 text rows are not contiguous.
 *--------------------------------------
 ROWLO        dfb   $00,$80,$00,$80,$00,$80,$00,$80
