@@ -31,7 +31,8 @@ pick from them, and single letters to act.
 
 - Copying a directory and its contents. Deferred — see §11.
 - Checking free space before a copy. Deferred, with a caveat in §7.
-- Viewing or editing file contents. `RET` opens directories and nothing else.
+- Viewing or editing file contents. ~~`RET` opens directories and nothing
+  else.~~ It runs programs too now -- see §14. Viewing is still not a goal.
 - DOS 3.3, Pascal or CP/M volumes. ProDOS only.
 - Sorting. See §4.
 
@@ -418,3 +419,127 @@ cursor line is really highlighted is a question only screen memory answers.
 - What a batch does when the destination directory fills mid-run: stop, or
   carry on and report? Stopping is probably right, since everything after it
   will fail too.
+
+## 14. Running a program, and booting a slot
+
+Two commands end ZipFiler rather than returning to it: `RET` on a program, and
+`P`, which asks `PR#` and boots a slot. Both are as built and tested.
+
+### The awkward part
+
+A `SYS` file loads at $2000, which is where ZipFiler is running. The code doing
+the reading would be overwritten partway through its own MLI call, so it cannot
+be part of ZipFiler. A small stub is copied below $2000 and the jump is made
+from there.
+
+That stub is **position independent**: assembled at its natural address inside
+the program, executed from a copy somewhere else. So it contains no `jsr` or
+`jmp` to a label inside itself -- branches only, since those are relative and
+move with the code. Absolute references are fine when they name something that
+does not move: the MLI, the parameter blocks, the entry point.
+
+This is the failure that does not announce itself. A `jsr` inside the stub
+assembles perfectly and, at run time, jumps to an address now holding whatever
+was just loaded. No test can catch it, because getting it wrong destroys memory
+before anything can report. `tools/stubcheck.py` reads the source and refuses
+the build, the way `dumcheck.py` does for overlapping `dum` blocks.
+
+**Everything that can fail safely happens first**, while ZipFiler is whole: the
+path, the prefix, the file's attributes, the `OPEN`. Any of those failing is a
+message on the status row and nothing else. Once the `READ` starts there is no
+way back, so the stub's only error path is `QUIT` -- the global page is still
+there, and ZipFiler is not.
+
+### The three types
+
+| type | what happens |
+|---|---|
+| `SYS` $FF | loads at $2000 and is entered. The straightforward one. |
+| `BIN` $06 | loads at the address in its own `aux_type` and is entered there. |
+| `BAS` $FC | loads `BASIC.SYSTEM` and names the program to it. |
+
+A `BIN` names its own address, and may name ours. `blocks_used` bounds how far
+it reaches -- an over-estimate, since the last block is rarely full, which is
+the right way for a safety check to be wrong. Three things must not be inside
+that range: the stub, the 1K buffer ProDOS reads through, and the zero page and
+stack underneath everything. The first two can move, so they do; the stub falls
+back to the screen, which is no longer being drawn on. Only a program that
+leaves nowhere to put them is refused, and the parameter blocks cannot move at
+all, so a `BIN` covering them is refused outright.
+
+### BASIC, and how it is told what to run
+
+A BASIC program needs an interpreter, so what gets loaded is `BASIC.SYSTEM`.
+The question is how to tell it *which* program.
+
+**BASIC.SYSTEM keeps that name inside its own image.** At `$2006` there is a
+length byte and up to fifteen characters, holding `STARTUP` as it comes off the
+disk -- which is why a file of that name runs by itself. Overwrite the field
+between loading the interpreter and entering it, and it runs whatever is named
+there instead. A **name**, not a path: it is looked up in the prefix, which is
+already the program's own directory.
+
+That is what ProDOS 2.4's Bitsy Bye does, and it is the answer to "how does
+Bitsy Bye manage it" -- **not** a smaller memory footprint. Footprint has
+nothing to do with it. ZipFiler loads and runs `BASIC.SYSTEM` perfectly well;
+what was missing was knowing where the interpreter keeps that name.
+
+Two other ways in were tried first. Both were checked on the machine rather
+than reasoned about, and both are recorded because they look plausible:
+
+- **The pathname at `$0280`.** ProDOS convention says a launched system program
+  finds its own pathname there, and ZipFiler sets it. BASIC.SYSTEM reads it,
+  but only to work out a prefix -- it has no bearing on what runs. Confirmed
+  both ways: a program called `HELLO` was not run, and the same program renamed
+  `STARTUP` was.
+- **Typing the command for it.** `KSW` is the hook every character `GETLN` reads
+  passes through, so a routine there is indistinguishable from somebody at the
+  keyboard, and it survives the load. But BASIC.SYSTEM puts `KSW` back to
+  `KEYIN` as it starts, so it is never called. Checked rather than assumed:
+  after a launch the feeder was still sitting intact on page 3 with `$38/$39`
+  reading `$FD1B`. That code was removed -- dead code that looks like it works
+  is worse than no code.
+
+**How it was actually found**, since the method matters more than the answer:
+Bitsy Bye and ZipFiler were put on the same disk, so the same launcher, same
+`BASIC.SYSTEM` and same program could be compared directly. A do-nothing `SYS`
+file was launched by each and the machine dumped afterwards; the two states
+differed only in the high bit of the separators in `$0280` -- and setting those
+changed nothing, which ruled the theory out. What settled it was disassembling
+`BASIC.SYSTEM`'s first page and finding `STARTUP` sitting at `$2007` behind a
+length byte.
+
+### Booting a slot
+
+### Booting a slot
+
+`PR#6` is how an Apple II owner says "boot the disk". There is no ProDOS call
+for it: the slot's firmware is entered at `$Cn00`. Before jumping, the switches
+`DISPINIT` set are undone and `SETSLOTCXROM` is written so `$C100-$CFFF` is the
+cards rather than the //e's own ROM -- **slot 3 especially**, where `$C300` is
+the 80-column firmware until that is done.
+
+**Slots 1, 2 and 4 to 7.** Not 3: on a //e `$C300` is the eighty-column
+firmware rather than a card, and booting it is not what anybody means by
+`PR#3`. Every other slot is the writer's business -- an empty one hangs the
+machine, but so does `PR#` on a real Apple II, and this program cannot tell
+from here which slots are filled.
+
+`ESC` at the prompt returns, and the prompt carries a cursor. The alternative
+is a machine that reboots on a mistyped key, which is not a trade anybody would
+take.
+
+### What this changes upstream
+
+Section 1 listed "`RET` opens directories and nothing else" as a non-goal. It is
+no longer one. Section 2's hint row is now exactly 80 columns, with nothing left
+over.
+
+The help screen was rewritten into **two columns**. It had been using eighty
+columns as though they were forty, which cost rows it had all along; everything
+now fits with room to spare.
+
+**Progress is announced before the work, not after it.** A count printed after
+each file is a count nobody sees until the run is over -- and what did appear at
+the end was the destination rescan saying "working", which reads as the program
+only starting once it had finished. `NITEM` is now the item in hand.

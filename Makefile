@@ -35,6 +35,7 @@ SOURCES := $(wildcard src/*.S)
 # quietly claim the same bytes and Merlin will not say a word.
 $(BIN): $(SOURCES) | $(BUILD)
 	@python3 $(TOOLS)/dumcheck.py
+	@python3 $(TOOLS)/stubcheck.py
 	@$(MERLIN) $(ASMINC) $(SRC) > $(BUILD)/merlin32.log 2>&1 || \
 		{ echo "--- Merlin32 failed ---"; cat $(BUILD)/merlin32.log; exit 1; }
 	@grep -iE '^\s+(Error|Warning)' $(BUILD)/merlin32.log && exit 1 || true
@@ -63,7 +64,7 @@ screen:
 # be anybody's real disk. See docs/design.md section 12.
 test: $(IMAGE)
 	@tests/mkfixture.sh >/dev/null
-	@tests/run.sh $(SECTION)
+	@tests/run.sh "$(SECTION)"
 
 # A disk with something on it to practise on: two levels of subdirectory and
 # a few file types. build/ZIPFILER.po is bare -- just the program and ProDOS.

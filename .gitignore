@@ -13,3 +13,11 @@ notes/
 src/_FileInformation.txt
 src/*.SYSTEM
 build/FIXTURE*.po
+
+# The launch-test programs are assembled by tests/mklaunch.sh from the .S files
+# beside them. A committed binary stops matching its source the moment anybody
+# edits the source, which is exactly the failure these exist to catch.
+tests/RUNME
+tests/RUNBIN
+tests/_FileInformation.txt
+tests/*_Output.txt

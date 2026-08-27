@@ -10,6 +10,12 @@ SET80VID     equ   $c00d            ; 80 column video
 SETALTCHAR   equ   $c00f            ; alt charset: MouseText + inverse lower
 MAINWR       equ   $c054            ; PAGE2 off -> screen writes to MAIN
 AUXWR        equ   $c055            ; PAGE2 on  -> screen writes to AUX
+CLR80STORE   equ   $c000            ; and the switches that undo those
+CLR80VID     equ   $c00c
+CLRALTCHAR   equ   $c00e
+SETSLOTCXROM equ   $c006            ; $C100-$CFFF is the cards, not the //e's
+                                    ; own ROM -- which is what makes a slot
+                                    ; bootable, slot 3 especially
 TXTSET       equ   $c051
 MIXCLR       equ   $c052
 HIRESOFF     equ   $c056
@@ -18,6 +24,11 @@ HIRESOFF     equ   $c056
 KBD          equ   $c000            ; bit 7 set when a key is waiting
 KBDSTRB      equ   $c010
 OPNAPPLE     equ   $c061            ; bit 7 = Open-Apple held
+
+*--- monitor ROM, for handing the machine over in a state a program that
+*    prints through COUT can use
+SETTXT       equ   $fb2f            ; text window to the whole screen
+HOME         equ   $fc58            ; clear it, cursor to the top left
 
 *--- ProDOS 8 ---
 MLI          equ   $bf00

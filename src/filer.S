@@ -31,6 +31,7 @@ START        jsr   DISPINIT
              sta   PANEL
              sta   MSGON
              sta   PRMMODE
+             jsr   RUNINIT          ; the launcher's blocks, same hazard
              lda   #$01
              jsr   SELPANEL
              jsr   TOVOLUMES
@@ -99,6 +100,10 @@ MAINLOOP     jsr   DRAWSCREEN
              beq   :tall
              cmp   #$ed
              beq   :tmove
+             cmp   #$d0             ; P, either case: PR# and boot a slot
+             beq   :tboot
+             cmp   #$f0
+             beq   :tboot
              jmp   :key
 
 *--- the handlers are further off than a branch reaches
@@ -119,6 +124,12 @@ MAINLOOP     jsr   DRAWSCREEN
 :tfind       jmp   :find
 :tmove       jmp   :move
 :tall        jmp   :tagall
+:tboot       jmp   :boot
+
+*--- P. BOOTCMD only returns if the slot prompt was cancelled; when it does
+*    not, nothing below this line runs ever again.
+:boot        jsr   BOOTCMD
+             jmp   MAINLOOP
 
 :tab         lda   PANEL
              eor   #$01
@@ -170,10 +181,11 @@ MAINLOOP     jsr   DRAWSCREEN
              jmp   :read
 :subdir      ldy   PCURSEL,x
              lda   (PTYPE),y
-             cmp   #$0f             ; a directory, and only a directory
-             beq   *+5
-             jmp   :key
-             jsr   PATHDOWN
+             cmp   #$0f             ; a directory is entered...
+             beq   :godir
+             jsr   RUNSEL           ; ...and a program is run, if it is one
+             jmp   MAINLOOP         ; RUNSEL only returns when it could not
+:godir       jsr   PATHDOWN
 :read        jsr   DIRSCAN
              bcs   :fell
              ldx   PANSEL
@@ -761,20 +773,53 @@ SP4          asc   "reading the volumes..."
 HELPSCR      jsr   CLRSCRN
              lda   #$00
              sta   ROWN
+
+*--- Two strings to a row: one at column 4, one at column 42. Eighty columns
+*    were being used as forty before this, which cost rows the screen had all
+*    along. A row whose LEFT entry is centred is drawn centred instead, which
+*    is what the title and the footer want.
+*    The table is exactly twenty-four rows, so the row count ends it. A null
+*    pointer means an empty half, NOT the end -- blank rows have those.
 :row         lda   ROWN
              asl
+             asl                    ; four bytes a row: two pointers
              tax
-             lda   HELPTBL+1,x
-             beq   :wait            ; a null pointer ends the table
-             pha
+             stx   TMPC
+             jsr   CLRBUF
+
+             ldx   TMPC
+             lda   HELPTBL,x
+             ora   HELPTBL+1,x
+             beq   :right           ; nothing on the left of this row
+             ldx   TMPC
              lda   HELPTBL,x
              sta   STRPTR
-             pla
+             lda   HELPTBL+1,x
              sta   STRPTR+1
-             jsr   CLRBUF
-             ldx   #$06
+             ldx   TMPC
+             lda   HELPCEN,x        ; is this row a centred one?
+             bne   :mid
+             ldx   #$04
+             bne   :put             ; always taken
+:mid         jsr   CENTRE
+:put         jsr   BUFSTR
+
+:right
+
+*--- and the right-hand column, if the row has one
+             ldx   TMPC
+             lda   HELPTBL+2,x
+             ora   HELPTBL+3,x
+             beq   :out
+             ldx   TMPC
+             lda   HELPTBL+2,x
+             sta   STRPTR
+             lda   HELPTBL+3,x
+             sta   STRPTR+1
+             ldx   #$2a             ; column 42
              jsr   BUFSTR
-             lda   ROWN
+
+:out         lda   ROWN
              jsr   DRAWLINE
              inc   ROWN
              lda   ROWN
@@ -785,47 +830,124 @@ HELPSCR      jsr   CLRSCRN
              sta   KBDSTRB
              rts
 
-HELPTBL      da    H0,H1,H2,H3,H4,H5,H6,H7,H8,H9
-             da    H10,H10B,H11,H12,H13,H14,H15,H15B,H16,H17
-             da    $0000
+*--- Which rows are centred rather than set at column 4. Indexed the same way
+*    as HELPTBL, so a row's flag is at its own offset.
+HELPCEN      dfb   $01,$00,$00,$00  ; the title
+             dfb   $00,$00,$00,$00
+             dfb   $00,$00,$00,$00
+             dfb   $00,$00,$00,$00
+             dfb   $00,$00,$00,$00
+             dfb   $00,$00,$00,$00
+             dfb   $00,$00,$00,$00
+             dfb   $00,$00,$00,$00
+             dfb   $00,$00,$00,$00
+             dfb   $00,$00,$00,$00
+             dfb   $00,$00,$00,$00
+             dfb   $00,$00,$00,$00
+             dfb   $00,$00,$00,$00
+             dfb   $00,$00,$00,$00
+             dfb   $00,$00,$00,$00
+             dfb   $00,$00,$00,$00
+             dfb   $00,$00,$00,$00
+             dfb   $00,$00,$00,$00
+             dfb   $00,$00,$00,$00
+             dfb   $00,$00,$00,$00
+             dfb   $00,$00,$00,$00
+             dfb   $01,$00,$00,$00  ; and the footer
+             dfb   $00,$00,$00,$00
+             dfb   $00,$00,$00,$00
 
-H0           asc   "ZIPFILER -- A FILE MANAGER FOR PRODOS 8"
+*--- left string, right string, a row at a time
+HELPTBL      da    HTITLE,$0000
+             da    $0000,$0000
+             da    HINTRO,$0000
+             da    HINTRO2,$0000
+             da    $0000,$0000
+             da    HMOVE,HFILE
+             da    HARROW,HCOPY
+             da    HTAB,HMOVE2
+             da    HLEFT,HMOVE3
+             da    HFIND,HDEL
+             da    HSWAP,HREN
+             da    $0000,HNEW
+             da    HTAG,HLOCK
+             da    HSPACE,HLOCK2
+             da    HALL,$0000
+             da    HALL2,HSTART
+             da    $0000,HRET
+             da    HACTS,HRET2
+             da    HACTS2,HPR
+             da    HACTS3,HQUIT
+             da    $0000,$0000
+             da    HFOOT,$0000
+             da    $0000,$0000
+             da    $0000,$0000
+
+HTITLE       asc   "ZIPFILER -- A FILE MANAGER FOR PRODOS 8"
              dfb   $00
-H1           dfb   $00
-H2           asc   "Two directories at once. The cursor keys pick"
+HINTRO       asc   "Two directories at once. The cursor keys pick from them,"
              dfb   $00
-H3           asc   "from them; a pathname never has to be typed."
+HINTRO2      asc   "and a pathname never has to be typed."
              dfb   $00
-H4           dfb   $00
-H5           asc   "  ARROWS   move the cursor"
+
+HMOVE        asc   "GETTING ABOUT"
              dfb   $00
-H6           asc   "  TAB      the other panel"
+HARROW       asc   "  ARROWS  move the cursor"
              dfb   $00
-H7           asc   "  RET      into a directory or a volume"
+HTAB         asc   "  TAB     the other panel"
              dfb   $00
-H8           asc   "  LEFT     up a level; out of a volume root"
+HLEFT        asc   "  LEFT    up a level"
              dfb   $00
-H9           asc   "           it lists the volumes themselves"
+HFIND        asc   "  /       find a name"
              dfb   $00
-H10          asc   "  SPACE    tag; commands act on the tagged"
+HSWAP        asc   "  S       swap the panels over"
              dfb   $00
-H10B         asc   "  A        tag all, or clear if all are"
+
+HTAG         asc   "TAGGING"
              dfb   $00
-H11          asc   "           set, or on the cursor line"
+HSPACE       asc   "  SPACE   tag, and step down"
              dfb   $00
-H12          asc   "  C        copy, LEFT panel to RIGHT"
+HALL         asc   "  A       tag all, or clear them"
              dfb   $00
-H13          asc   "  S        swap the panels over"
+HALL2        asc   "          if all are set already"
              dfb   $00
-H14          asc   "  L        lock, or unlock if all are locked"
+HACTS        asc   "A command acts on the tagged"
              dfb   $00
-H15          asc   "  R  D  N  rename, delete, new directory"
+HACTS2       asc   "files, or on the cursor line"
              dfb   $00
-H15B         asc   "  M        move: copy across, then remove"
+HACTS3       asc   "when nothing is tagged."
              dfb   $00
-H16          asc   "  /  Q     find a name, and quit"
+
+HFILE        asc   "WORKING ON FILES"
              dfb   $00
-H17          asc   "                         press any key"
+HCOPY        asc   "  C    copy, LEFT panel to RIGHT"
+             dfb   $00
+HMOVE2       asc   "  M    move: copy across, then"
+             dfb   $00
+HMOVE3       asc   "       remove the original"
+             dfb   $00
+HDEL         asc   "  D    delete"
+             dfb   $00
+HREN         asc   "  R    rename"
+             dfb   $00
+HNEW         asc   "  N    new directory"
+             dfb   $00
+HLOCK        asc   "  L    lock, or unlock if every"
+             dfb   $00
+HLOCK2       asc   "       one is locked already"
+             dfb   $00
+
+HSTART       asc   "STARTING THINGS"
+             dfb   $00
+HRET         asc   "  RET  a directory: go into it"
+             dfb   $00
+HRET2        asc   "       a SYS, BIN or BAS: run it"
+             dfb   $00
+HPR          asc   "  P    PR# -- boot a slot"
+             dfb   $00
+HQUIT        asc   "  Q    quit to ProDOS"
+             dfb   $00
+HFOOT        asc   "press any key"
              dfb   $00
 
 *--------------------------------------
@@ -1621,7 +1743,7 @@ MFILESW      asc   "files"
              dfb   $00
 MDIRNAME     asc   "NEW DIRECTORY: "
              dfb   $00
-HINTTXT      asc   "SPC tag  RET open  C opy  L ock  R name  D el  N ew  S wap  / find  Q uit  ?"
+HINTTXT      asc   "SPC tag  RET open/run  C opy  L ock  R name  D el  N ew  S wap  / find  Q uit  ?"
              dfb   $00
 
 *--- mutable storage
@@ -1652,3 +1774,4 @@ PRMMODE      ds    1                ; 0 a file name, 1 a directory, 2 a find
              put   prodos
              put   catalog
              put   copy
+             put   launch

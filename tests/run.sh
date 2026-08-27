@@ -14,6 +14,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VII="$ROOT/tools/vii.sh"
 FIXTURE="$ROOT/build/FIXTURE.po"
+LAUNCH="$ROOT/build/LAUNCH.po"
 BEFORE="$ROOT/build/FIXTURE-before.po"
 
 # One suite at a time: there is a single front machine, and a second run
@@ -777,8 +778,14 @@ k text "?"
 "$VII" settle 2 >/dev/null
 snapshot
 assert_row "the help screen comes up"             0 "A FILE MANAGER FOR PRODOS 8"
-assert_row "it lists the keys"                    5 "ARROWS"
-assert_row "and says how to leave"               19 "press any key"
+assert_row "it lists the keys"                    6 "ARROWS"
+# Two columns, so a row carries one heading from each. The whole point of the
+# rewrite was that eighty columns were being used as forty.
+assert_row "the left column has the movement keys" 5 "GETTING ABOUT"
+assert_row "and the right one the file commands"   5 "WORKING ON FILES"
+assert_row "P is listed"                          18 "PR# -- boot a slot"
+assert_row "and what RET runs"                    17 "SYS, BIN or BAS"
+assert_row "and says how to leave"                21 "press any key"
 
 k text " "
 "$VII" settle 2 >/dev/null
@@ -969,6 +976,182 @@ if [ "$out" = "identical" ]; then
 else
     bad "navigating the image changes not one block of it" "$out"
 fi
+fi
+
+#--------------------------------------
+# Launching a program, and booting a slot
+#
+# These run against their own image -- see tests/mklaunch.sh. Every program on
+# it changes what the root listing holds, and a dozen assertions above count
+# entries and name the row they are on.
+#
+# The programs launched here print a phrase ZipFiler cannot draw, then stop.
+# That is the only proof the screen can carry that something really started:
+# a launcher that clears the screen and hangs looks identical to one that
+# worked, right up until you read what is on it.
+#
+# RUNME also prints the pathname it found at $0280 and the prefix it was given.
+# Both are set by the launcher, both are invisible until some real program
+# needs them, and neither can be checked any other way.
+#--------------------------------------
+if section "launching a program"; then
+eject_now
+"$ROOT/tests/mklaunch.sh" >/dev/null
+LAUNCHED="$ROOT/build/launched.txt"
+
+# run_at <steps> [<steps>...] -- boot the launch image, then for each argument
+# walk that many rows down and press RET. More than one argument descends: the
+# listing is
+#     0 ZIPFILER.SYSTEM   3 RUNBIN     6 BASIC.SYSTEM
+#     1 RUNME             4 CLASH      7 PRODOS
+#     2 PROGS  (DEEP, HELLO)           5 PLAIN.TXT
+# Arguments are steps:marker pairs. The marker is text that appears once the
+# directory that RET opened has been read -- waited for, not slept through,
+# because reading one is slow and this machine has no keyboard buffer: a RET
+# sent while ZipFiler is still reading is not queued, it is gone. That cost a
+# cascade of failures where the wrong program launched.
+launch_boot() {
+    "$VII" boot "$LAUNCH" >/dev/null || { echo "boot failed" >&2; exit 1; }
+    "$VII" speed maximum >/dev/null
+    "$VII" kbdelay 0.2 >/dev/null
+    "$VII" await "(volumes)" 60 >/dev/null || { echo "no volume list" >&2; exit 1; }
+    "$VII" settle 2 >/dev/null
+    k key "down arrow"; k line ""          # into /ZIPFILER
+    "$VII" await "ZIPFILER.SYSTEM" 60 >/dev/null || { echo "no root listing" >&2; exit 1; }
+    "$VII" settle 2 >/dev/null
+}
+
+run_at() {
+    launch_boot
+    local arg steps marker i
+    for arg in "$@"; do
+        steps="${arg%%:*}"
+        marker="${arg#*:}"
+        # NOT $(seq 1 $steps): BSD seq counts DOWNWARDS when the first
+        # number is the larger, so "seq 1 0" prints two lines rather than
+        # none, and a zero-step move sent two arrows. That launched the file
+        # BELOW the one under test, and the failure it produced named the
+        # wrong program.
+        i=0
+        while [ "$i" -lt "$steps" ]; do k key "down arrow"; i=$((i+1)); done
+        k line ""
+        if [ "$marker" != "$arg" ]; then
+            "$VII" await "$marker" 60 >/dev/null || bad "never opened: $marker"
+        fi
+        "$VII" settle 3 >/dev/null
+    done
+    "$VII" settle 5 >/dev/null
+    "$VII" screen > "$LAUNCHED"
+}
+
+launched_says() {
+    if grep -q "$2" "$LAUNCHED"; then ok "$1"; else
+        bad "$1" "wanted on screen: $2" "got: $(head -4 "$LAUNCHED" | tr '\n' '/')"; fi
+}
+
+#--- a SYS file at the root of the volume
+run_at 1
+launched_says "RET on a SYS file starts it"            "RUNME SAYS HELLO"
+launched_says "with the path ProDOS leaves at 0280"    "^/ZIPFILER/RUNME$"
+launched_says "and the prefix set to its directory"    "^/ZIPFILER/$"
+
+#--- the same program one level down, which is where a launcher that only ever
+#    built a root path would come apart
+run_at 2:DEEP 0
+launched_says "a program in a subdirectory starts too" "RUNME SAYS HELLO"
+launched_says "with the whole path, not just the name" "^/ZIPFILER/PROGS/DEEP$"
+launched_says "and the prefix follows it down"         "^/ZIPFILER/PROGS/$"
+
+#--- a BIN, which names its own load address rather than taking $2000
+run_at 3
+launched_says "RET on a BIN file starts it"            "RUNBIN AT 0300"
+launched_says "at the address the FILE named"          "^/ZIPFILER/RUNBIN$"
+
+#--- a BIN that would land on the launcher's own parameter blocks. It has to be
+#    refused: reading it in would destroy the block mid-read, and the machine
+#    with it. The message matters less than that ZipFiler is still there.
+run_at 4
+launched_says "a BIN that would land on the loader is refused" "NO ROOM TO LOAD IT SAFELY"
+launched_says "and ZipFiler is still running"                  "ZIPFILER"
+
+#--- and something that is not a program at all
+run_at 5
+launched_says "RET on a text file declines"            "NOT A PROGRAM"
+launched_says "and stays where it was"                 "ZIPFILER"
+
+#--- A BASIC program needs BASIC.SYSTEM, and BASIC.SYSTEM has to be told what
+#    to run. It keeps that name inside its own image at $2006, holding
+#    "STARTUP" as it comes off the disk; the launcher overwrites it between
+#    loading the interpreter and entering it. See docs/design.md section 14.
+if "$ROOT/tools/ac" -g "$LAUNCH" BASIC.SYSTEM 2>&1 | grep -q "No match"; then
+    echo "  (skipping BASIC: no BASIC.SYSTEM to hand -- see tests/mklaunch.sh)"
+else
+    run_at 2:DEEP 1                           # into PROGS, then RET on HELLO
+    "$VII" settle 8 >/dev/null
+    "$VII" screen > "$LAUNCHED"
+    launched_says "RET on a BASIC program runs it" "BASIC PROGRAM RAN"
+    # ...and runs it rather than merely opening BASIC, which is the whole
+    # difference. The banner appears when BASIC.SYSTEM has nothing to run.
+    if grep -q "PRODOS BASIC" "$LAUNCHED"; then
+        bad "and does not stop at the prompt" "the interpreter came up idle"
+    else
+        ok "and does not stop at the prompt"
+    fi
+fi
+
+#--- P, which asks for a slot and boots it. ESC has to come back, because the
+#    alternative is a machine that reboots on a mistyped key.
+"$VII" boot "$LAUNCH" >/dev/null
+"$VII" speed maximum >/dev/null
+"$VII" kbdelay 0.2 >/dev/null
+"$VII" await "(volumes)" 60 >/dev/null
+"$VII" settle 2 >/dev/null
+k text "P"
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "P asks which slot"                        22 "PR#"
+# The cursor is ONE cell, so assert_inverse -- which wants a whole run of them
+# -- is the wrong tool. Column 4 is even, so it lives in aux at half that
+# offset, and inverse means the high bit is clear.
+_curaddr=$(python3 -c "
+lo=[0x00,0x80]*12; hi=[0x04,0x04,0x05,0x05,0x06,0x06,0x07,0x07]*3
+base=[0,0x28,0x50][22//8]; print(hex(((hi[22]<<8)|lo[22]|base)+2))")
+"$VII" dump "$_curaddr" 1 1 "$ROOT/build/cur.bin" >/dev/null 2>&1
+if [ "$(python3 -c "print(open('$ROOT/build/cur.bin','rb').read()[0] < 0x80)")" = "True" ]; then
+    ok "with a cursor where the digit goes"
+else
+    bad "with a cursor where the digit goes" "column 4 of the prompt is not inverse"
+fi
+
+# 3 is the //e's own eighty-column firmware rather than a card, so it is not
+# offered and must not be taken. Anything that is not a slot leaves the prompt
+# up, waiting -- which is what these check: the prompt is still there.
+k text "3"
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "3 is not a slot on this machine"          22 "PR#"
+k text "8"
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "and neither is 8"                         22 "PR#"
+k key esc
+"$VII" settle 2 >/dev/null
+snapshot
+assert_row "and ESC comes back to the listing"        22 "entries"
+
+# Somewhere other than the volume list, so that a reboot is visible as a
+# reboot rather than as nothing having happened at all.
+k key "down arrow"; k line ""
+"$VII" settle 2 >/dev/null
+snapshot
+assert_left "in a directory before booting"            0 "/ZIPFILER"
+k text "P"
+"$VII" settle 2 >/dev/null
+k text "6"
+"$VII" await "(volumes)" 60 >/dev/null || bad "PR#6 never came back up"
+"$VII" settle 3 >/dev/null
+snapshot
+assert_left "PR#6 boots the slot and starts over"      0 "(volumes)"
 fi
 
 echo
