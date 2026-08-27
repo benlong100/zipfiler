@@ -47,6 +47,15 @@ CPYCMD       lda   #$00
 :each        jsr   TGTNEXT
              bcs   :done
 
+*--- Say what is about to happen, not what just did. Copying is the slow part,
+*    so a count printed after each file is a count nobody sees until the whole
+*    run is over -- and what showed up at the end was the destination rescan
+*    announcing itself, which reads as the program only starting work once it
+*    had finished. NITEM is the item in hand, so it counts up as each one
+*    begins.
+             inc   NITEM
+             jsr   SHOWPROG
+
 *--- a directory goes with everything in it
              ldy   TGTI
              lda   (PTYPE),y
@@ -54,8 +63,6 @@ CPYCMD       lda   #$00
              bne   :file
              jsr   CPYPATHS
              jsr   CPYTREE
-             inc   NITEM
-             jsr   SHOWPROG
              lda   CPYSTOP
              beq   :next
              jmp   :done
@@ -67,8 +74,6 @@ CPYCMD       lda   #$00
              bne   :done            ; the writer asked to stop
              jmp   :next
 :ok          inc   NDONE
-             inc   NITEM
-             jsr   SHOWPROG
 :next        lda   #$00
              jsr   SELPANEL         ; CPYPATHS left the right panel chosen
              jmp   :each
@@ -717,6 +722,8 @@ MOVECMD      lda   #$00
 
 :each        jsr   TGTNEXT
              bcs   :done
+             inc   NITEM            ; the item in hand, said before the wait
+             jsr   SHOWPROG
 
 *--- A directory would need its source tree taken away afterwards, and
 *    ProDOS will not destroy a directory with anything in it. Recursive
@@ -749,8 +756,6 @@ MOVECMD      lda   #$00
 :arrived     jsr   DESTROYF
              bcs   :halfway
              inc   NDONE
-             inc   NITEM
-             jsr   SHOWPROG
              jmp   :next
 :halfway     inc   NFAIL            ; copied but not removed, which is safe
              jmp   :next
