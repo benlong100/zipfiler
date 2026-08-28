@@ -92,7 +92,21 @@ OFFACC       equ   $1300
 TAGS0        equ   $1600
 TAGS1        equ   $1620
 
-*--- screen codes we draw chrome with ---
+*--- Screen codes we draw the chrome with.
+*
+*    ASCII, not MouseText, and that was tried the other way round. MouseText
+*    has a handsomer rule ($4C) and vertical ($5F) -- unbroken lines rather
+*    than dashes -- but it has NO corner and NO T-junction, and its strokes sit
+*    on the EDGES of the cell: $4C along the top, $5F down the left. A cell
+*    holds one glyph, so where the divider meets the rule you can have an
+*    unbroken horizontal with the vertical broken for a whole row, or an
+*    unbroken vertical with a six-pixel notch in the horizontal. Not both, and
+*    neither looks right.
+*
+*    These three are centred in their cells and so agree with each other: the
+*    dash meets the bar in the middle, and the plus has both strokes where they
+*    are expected. A worse-looking line that joins beats a better-looking one
+*    that does not. See docs/design.md section 16.
 CHDASH       equ   $ad              ; '-'
 CHPLUS       equ   $ab              ; '+'
 CHBAR        equ   $fc              ; '|'

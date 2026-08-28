@@ -647,3 +647,44 @@ The change takes effect at the next boot of that volume, because what is in
 memory was copied out of the language card when ProDOS started.
 
 
+## 16. Chrome — MouseText tried, and turned down
+
+The rule under the paths and the divider between the panels are ASCII: `-`,
+`|` and `+`. MouseText was tried in their place and put back.
+
+It should have won. §10 listed "MouseText detection, which a two-panel layout
+wants for its rules and borders" among the things to bring across from ZipEdit,
+`ALTCHARSET` has been on since the first day, and `$4C` and `$5F` draw
+unbroken lines where the ASCII characters draw a row of dashes and a column of
+bars. On its own each is plainly better.
+
+**The junction is what killed it.** MouseText has no corner and no
+T-junction -- there is nothing in the set that joins a horizontal to a
+vertical, which ZipEdit's help border ran into first. Worse, the strokes sit on
+the EDGES of their cells: `$4C` along the top, `$5F` down the left. So where
+the divider meets the rule, a cell holding one glyph can give:
+
+| | horizontal | vertical |
+|---|---|---|
+| rule in the crossing cell | unbroken | **14px break**, most of a row |
+| vertical in the crossing cell | **6px notch** | unbroken |
+| a plus, as before | 7px hole | 14px break |
+
+and nothing better. The plus was worst of all: it is centred, so it lined up
+with neither stroke and simply sat in the gap.
+
+That is the whole point. **These three ASCII glyphs are centred in their cells
+and therefore agree with each other** -- the dash meets the bar in the middle,
+and the plus has both strokes exactly where the other two put theirs. A
+worse-looking line that joins beats a better-looking one that does not.
+
+Read off the screen rather than reasoned about: the pixels were dumped from a
+screenshot at each variant, because the glyph geometry is not something the
+character codes show and the comments about it elsewhere are easy to misread.
+Cells are 7x16; `$4C` lands at y=0..1 of its cell and `$5F` at x=0.
+
+**What this does not settle.** On an original //e MouseText does not exist at
+all and those codes are a second copy of inverse uppercase, so a border built
+from them comes out as a row of L's. That would have needed detection had it
+been kept. It was not, and ASCII draws the same on every machine in the family,
+so the question no longer arises.

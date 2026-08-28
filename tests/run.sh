@@ -176,8 +176,12 @@ assert_row "the left panel names itself"          0 ">(volumes)"
 assert_row "and so does the right"                0 "(volumes)"
 assert_row "the boot volume is listed"            3 "ZIPFILER"
 assert_row "a volume shows as VOL, not a type"    3 "VOL"
+# ASCII rather than MouseText, and deliberately -- see docs/design.md 16. The
+# three glyphs are centred in their cells and so meet each other; MouseText's
+# sit on the cell edges and it has no junction at all.
 assert_row "the divider runs down the screen"     2 "|"
 assert_row "the rule crosses it"                  1 "+"
+assert_row "and the rule runs the width"          1 "----------"
 assert_inverse "the cursor line is drawn inverse" 2
 fi
 
