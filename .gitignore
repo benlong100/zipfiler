@@ -21,3 +21,9 @@ tests/RUNME
 tests/RUNBIN
 tests/_FileInformation.txt
 tests/*_Output.txt
+tests/QUITTER
+src/ZFQUIT.BIN
+build/QUITTEST.po
+*.quitsave
+src/QPATCH.SYSTEM
+src/zfquitdata.S

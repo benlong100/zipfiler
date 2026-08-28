@@ -543,3 +543,107 @@ now fits with room to spare.
 each file is a count nobody sees until the run is over -- and what did appear at
 the end was the destination rescan saying "working", which reads as the program
 only starting once it had finished. `NITEM` is now the item in hand.
+
+## 15. Replacing the quit routine — as built
+
+Quitting any program on a patched disk comes back to ZipFiler instead of Bitsy
+Bye, and the patch goes both ways.
+
+### How quit actually works
+
+`MLI QUIT ($65)` does not call anything. It **copies four pages out of the
+second 4K bank of the language card down to `$1000` and jumps there**. That
+block *is* the quit routine — on ProDOS 2.4 it is Bitsy Bye, `$D100-$D4FF`
+landing at `$1000-$13FF`. Classic ProDOS copied three pages, which is where the
+768-byte figure in the old documentation comes from; 2.4 copies four, which is
+how Bitsy Bye affords its ~1K.
+
+Every step of that was checked on the disk rather than taken on trust:
+
+| | |
+|---|---|
+| `QUIT.SYSTEM` is 56 bytes | soft-switch cleanup, then `JSR $BF00` / `$65`. Quit **is** Bitsy Bye. |
+| Bitsy Bye's strings in RAM | `$1303`, `$1327` — `$1000` plus their offset in the block |
+| the same bytes in the PRODOS file | offset `$3A00`, **1023 of 1024 identical** |
+| the one byte that differs | `$10BA`, set at boot; not part of the code |
+| extended QUIT (`$EE` + pathname) | **not honoured** — lands in Bitsy Bye regardless |
+
+So the block sits verbatim in the PRODOS file and can simply be replaced. This
+is not a new idea: Bird's Better Bye patched itself into ProDOS the same way,
+and Dave Cotter's `BYE.SYSTEM` existed to patch it back — which is why this
+restores as well as installs.
+
+### What replaces it
+
+`src/zfquit.S`, assembled at `$1000` and 588 bytes of the 1024 available. It
+does what a quit routine has to do first — clear decimal mode, bank the ROM
+back in so the monitor's routines work, re-enable interrupts, put the screen in
+a state something can print on — and then looks for `ZIPFILER.SYSTEM`.
+
+**It scans rather than remembering.** `ON_LINE` gives every volume; each is
+tried in turn. A disk gets copied to a card, a card gets repartitioned, a slot
+changes — and a quit routine that cannot find its program leaves you with no
+way out, because *the thing it replaced was the way out*. Not finding it prints
+a message and waits for a key, then looks again: putting a disk in is a
+recovery, a hang is not.
+
+Having found it, the rest is the launcher from §14 in miniature: the pathname
+to `$0280`, the prefix to the volume, then `OPEN`, `READ` to `$2000`, `CLOSE`,
+jump. It needs no relocatable stub because it is already below `$2000`, and
+the file lands over the top of it.
+
+### Two patchers, because one is not enough
+
+`tools/quitpatch.py` does it to a disk image on the Mac, and
+`src/qpatch.S` -- `QPATCH.SYSTEM`, which ships on the disk -- does it on the
+Apple, to a live volume.
+
+The Mac one came first and is safer, and it is still right for a floppy image.
+But **a large card partition, or a volume reached over a network share, is not
+a `.po` file sitting on the Mac** -- and those are exactly the volumes worth
+having ZipFiler come back on. There is no way to reach them except from the
+machine they are attached to. §12 says never point the SUITE at a real disk;
+that stands. This is a tool the writer aims deliberately, at a volume they
+name, having been told what is in it.
+
+**The order the on-Apple one works in is the whole safety argument**, not an
+implementation detail, because it is writing to a volume's operating system:
+
+1. Read PRODOS. Find the block by signature. Refuse unless there is **exactly
+   one** match -- none, or several, means this is not a ProDOS it knows.
+2. Write the original block to `QUIT.ORIG` on that volume.
+3. **Read `QUIT.ORIG` back and compare it.** If the save did not survive the
+   trip, stop. PRODOS has not been touched and the disk is as it was.
+4. Only now write the new block -- `SET_MARK` and 1024 bytes, not a rewrite of
+   the whole 17K file, which is a much bigger thing to be halfway through when
+   something goes wrong.
+5. Read that back and compare too.
+
+It refuses to patch a volume that is already patched, for the same reason the
+Mac one does: the saved original would become a patch and there would be no way
+back. Restoring reads `QUIT.ORIG`, writes it back, and removes it.
+
+The two keep their originals in different places, which is not an oversight:
+the Mac tool has nowhere to put a file on the Apple's disk, and the Apple one
+has no Mac. `<image>.quitsave` beside the image; `QUIT.ORIG` on the volume.
+
+Both share three decisions:
+- **It finds the block by signature, not by offset.** `D8 AD 82 C0 58` — the
+  `cld` / `lda $C082` / `cli` any quit routine has to begin with. Hard-coding
+  `$3A00` would silently patch the wrong kilobyte of a ProDOS that moved it.
+  More than one match, or none, is refused rather than guessed at.
+- **It refuses to install twice.** The original is saved to
+  `<image>.quitsave` on the first install; installing again over a patched
+  image would overwrite that saved copy with a patch, and there would be no way
+  back. Restore first.
+
+### What this does not do
+
+It patches one volume. Every boot volume that should behave this way needs
+doing separately, which is inherent: the quit routine lives in that volume's
+own copy of PRODOS.
+
+The change takes effect at the next boot of that volume, because what is in
+memory was copied out of the language card when ProDOS started.
+
+

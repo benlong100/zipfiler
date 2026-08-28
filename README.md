@@ -44,6 +44,24 @@ Since a program loads over ZipFiler itself, the loader is a position-independent
 stub copied below `$2000` first. `docs/design.md` §14 has the details, including
 the two approaches that did not work and why.
 
+## Coming back to it
+
+Quitting a program normally lands you in the ProDOS selector — Bitsy Bye, on
+2.4. `QPATCH.SYSTEM`, on the disk beside ZipFiler, can change that so quitting
+**any** program on a volume comes back to ZipFiler instead. It lists the
+volumes on line, says which routine each currently has, and installs or
+restores on the one you pick.
+
+It saves what it replaces to `QUIT.ORIG` on that volume and reads it back to
+check before it touches `PRODOS` at all, so a failed save leaves the disk
+exactly as it was. `R` puts the original back. The change takes effect at the
+next boot.
+
+There is a Mac-side equivalent for disk images — `make quitpatch`,
+`make unquit`, `make quitstatus` — but a card partition or a volume on a
+network share is not an image, and that is what `QPATCH.SYSTEM` is for.
+`docs/design.md` §15 has the mechanism.
+
 ## Building
 
     make disk      a bootable image, build/ZIPFILER.po

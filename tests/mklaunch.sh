@@ -15,6 +15,10 @@ OUT="${1:-$ROOT/build/LAUNCH.po}"
 
 cp "$ROOT/build/ZIPFILER.po" "$OUT"
 
+# Out, for the same reason as in tests/mkfixture.sh: the launch tests walk down
+# to a numbered row, and an extra file at the top moves every one of them.
+"$AC" -d "$OUT" QPATCH.SYSTEM 2>/dev/null || true
+
 # The programs are assembled here rather than committed: they are under 200
 # bytes each and they have to match their source, which a checked-in binary
 # stops being the moment somebody edits the .S beside it.

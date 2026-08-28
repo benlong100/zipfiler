@@ -21,8 +21,14 @@ VII     := $(TOOLS)/vii.sh
 
 BIN     := $(BUILD)/$(NAME)
 IMAGE   := $(BUILD)/ZIPFILER.po
+# The replacement quit routine, and the patcher that carries it on the Apple.
+# Defined here rather than beside their rules: make expands a prerequisite
+# when it reads the rule, so a name defined later expands to nothing and the
+# file silently never gets built.
+QUITBIN := src/ZFQUIT.BIN
+QPATCH  := $(BUILD)/QPATCH.SYSTEM
 
-.PHONY: all disk run screen test fixture card eject clean
+.PHONY: quitcode qpatch quitpatch unquit quitstatus all disk run screen test fixture card eject clean
 
 all: $(BIN)
 
@@ -48,8 +54,9 @@ $(BUILD):
 
 disk: $(IMAGE)
 
-$(IMAGE): $(BIN)
+$(IMAGE): $(BIN) $(QPATCH)
 	@VOL=ZIPFILER SYS=$(NAME) $(TOOLS)/mkdisk.sh $(IMAGE) $(BIN)
+	@$(AC) -p $(IMAGE) QPATCH.SYSTEM SYS 0x2000 < $(QPATCH)
 
 run: $(IMAGE)
 	@$(VII) boot $(IMAGE)
@@ -62,7 +69,7 @@ screen:
 
 # The fixture is rebuilt every run: the suite writes to it, and it must never
 # be anybody's real disk. See docs/design.md section 12.
-test: $(IMAGE)
+test: $(IMAGE) quitcode
 	@tests/mkfixture.sh >/dev/null
 	@tests/run.sh "$(SECTION)"
 
@@ -79,6 +86,49 @@ card: $(IMAGE)
 	@$(TOOLS)/tocard.sh "$(VOL)" $(IMG)
 
 # Virtual ][ buffers image writes until eject.
+# --- the quit routine ------------------------------------------------------
+# MLI QUIT copies four pages out of the language card to $1000 and jumps there,
+# so those 1024 bytes ARE what happens when any program quits. Replacing them
+# makes quitting land in ZipFiler instead of Bitsy Bye. See docs/design.md 15.
+#
+# It patches an IMAGE, never a mounted card and never a live boot volume, and
+# it saves what it replaced so `unquit` can put it back.
+
+# QPATCH.SYSTEM does the same job ON THE APPLE, for a volume that is not a .po
+# on the Mac -- a big card partition, or one reached over a network share.
+# Those are the volumes most worth having ZipFiler come back on, and there is
+# no other way to reach them.
+
+quitcode: $(QUITBIN)
+qpatch: $(QPATCH)
+
+$(QPATCH): src/qpatch.S src/zfquitdata.S | $(BUILD)
+	@$(MERLIN) $(ASMINC) src/qpatch.S > $(BUILD)/qpatch.log 2>&1 || \
+		{ echo "--- Merlin32 failed ---"; cat $(BUILD)/qpatch.log; exit 1; }
+	@mv src/QPATCH.SYSTEM $(QPATCH)
+	@rm -f src/_FileInformation.txt src/QPATCH.SYSTEM_Output.txt
+	@echo "on-Apple patcher: $(QPATCH) ($$(stat -f%z $(QPATCH)) bytes)"
+
+# The routine has to be carried inside QPATCH, since on the Apple there is no
+# Mac to hand it over. Merlin cannot include a binary, so it becomes dfb lines.
+src/zfquitdata.S: $(QUITBIN) $(TOOLS)/binblob.py
+	@python3 $(TOOLS)/binblob.py $(QUITBIN) QUITCODE 1024 > $@
+
+$(QUITBIN): src/zfquit.S
+	@$(MERLIN) $(ASMINC) src/zfquit.S > $(BUILD)/zfquit.log 2>&1 || \
+		{ echo "--- Merlin32 failed ---"; cat $(BUILD)/zfquit.log; exit 1; }
+	@rm -f src/_FileInformation.txt src/ZFQUIT.BIN_Output.txt
+	@echo "quit routine: $(QUITBIN) ($$(stat -f%z $(QUITBIN)) of 1024 bytes)"
+
+quitpatch: quitcode $(IMAGE)
+	@python3 $(TOOLS)/quitpatch.py install $(IMG)
+
+unquit:
+	@python3 $(TOOLS)/quitpatch.py restore $(IMG)
+
+quitstatus:
+	@python3 $(TOOLS)/quitpatch.py status $(IMG)
+
 eject:
 	@osascript -e 'tell application "Virtual ][" to tell (last machine) to eject device "S6D1"' 2>/dev/null || true
 	@echo "ejected"

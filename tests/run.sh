@@ -1154,6 +1154,215 @@ snapshot
 assert_left "PR#6 boots the slot and starts over"      0 "(volumes)"
 fi
 
+#--------------------------------------
+# The quit routine
+#
+# MLI QUIT copies four pages out of the language card to $1000 and jumps there.
+# Those 1024 bytes ARE what happens when any program quits, so replacing them
+# is how quitting comes back to ZipFiler instead of Bitsy Bye.
+#
+# This runs on its own COPY of the image. The patcher only ever writes to a
+# file on the Mac, and this makes sure the suite is no exception -- see
+# docs/design.md 12 and 15.
+#--------------------------------------
+if section "the quit routine"; then
+QIMG="$ROOT/build/QUITTEST.po"
+eject_now
+rm -f "$QIMG" "$QIMG.quitsave"
+cp "$ROOT/build/ZIPFILER.po" "$QIMG"
+
+# Before anything: the patcher has to find the block and know what is in it.
+out="$(python3 "$ROOT/tools/quitpatch.py" status "$QIMG" 2>&1)"
+if echo "$out" | grep -q "Bitsy Bye"; then
+    ok "a stock image has Bitsy Bye as its quit routine"
+else
+    bad "a stock image has Bitsy Bye as its quit routine" "$out"
+fi
+
+# Restoring one that was never patched must refuse rather than write rubbish.
+if python3 "$ROOT/tools/quitpatch.py" restore "$QIMG" >/dev/null 2>&1; then
+    bad "restoring an unpatched image is refused"
+else
+    ok "restoring an unpatched image is refused"
+fi
+
+python3 "$ROOT/tools/quitpatch.py" install "$QIMG" >/dev/null 2>&1
+out="$(python3 "$ROOT/tools/quitpatch.py" status "$QIMG" 2>&1)"
+if echo "$out" | grep -q "ZipFiler"; then
+    ok "installing puts ZipFiler's routine in"
+else
+    bad "installing puts ZipFiler's routine in" "$out"
+fi
+if [ -f "$QIMG.quitsave" ]; then
+    ok "and keeps the original beside it"
+else
+    bad "and keeps the original beside it" "no $QIMG.quitsave"
+fi
+
+# Twice would overwrite the saved copy with a patch, and there would be no way
+# back. That is the one mistake this tool must not allow.
+if python3 "$ROOT/tools/quitpatch.py" install "$QIMG" >/dev/null 2>&1; then
+    bad "installing twice is refused"
+else
+    ok "installing twice is refused"
+fi
+
+# But a REBUILT image is unpatched with a save file still lying beside it, and
+# that has to stay patchable -- it is what happens after any change to the
+# program, which is the commonest thing anybody will do.
+cp "$ROOT/build/ZIPFILER.po" "$QIMG"
+if python3 "$ROOT/tools/quitpatch.py" install "$QIMG" >/dev/null 2>&1; then
+    ok "a rebuilt image can be patched again"
+else
+    bad "a rebuilt image can be patched again" \
+        "a stale .quitsave blocked it"
+fi
+out="$(python3 "$ROOT/tools/quitpatch.py" status "$QIMG" 2>&1)"
+if echo "$out" | grep -q "ZipFiler"; then
+    ok "and the rebuilt one really is patched"
+else
+    bad "and the rebuilt one really is patched" "$out"
+fi
+
+#--- and now the machine. Quitting has to come back to ZipFiler.
+"$VII" boot "$QIMG" >/dev/null || { echo "boot failed" >&2; exit 1; }
+"$VII" speed maximum >/dev/null
+"$VII" kbdelay 0.2 >/dev/null
+"$VII" await "(volumes)" 90 >/dev/null || bad "the patched image never booted"
+"$VII" settle 2 >/dev/null
+
+# Go somewhere first, so a relaunch is visible as a relaunch rather than as
+# nothing at all having happened.
+k key "down arrow"; k line ""
+"$VII" await "ZIPFILER.SYSTEM" 60 >/dev/null || bad "never entered the volume"
+"$VII" settle 2 >/dev/null
+snapshot
+assert_left "in a directory before quitting"      0 "/ZIPFILER"
+
+k text "Q"
+"$VII" await "(volumes)" 90 >/dev/null || bad "quitting never came back"
+"$VII" settle 3 >/dev/null
+snapshot
+assert_left "and quitting comes back to ZipFiler" 0 "(volumes)"
+
+# ...and for a program that is not ZipFiler, which is the whole point: the
+# routine belongs to ProDOS now, not to us.
+"$ROOT/tools/merlin32" "$ROOT/tools/asminc" "$ROOT/tests/quitter.S" >/dev/null 2>&1
+rm -f "$ROOT/tests/_FileInformation.txt" "$ROOT/tests/QUITTER_Output.txt"
+"$ROOT/tools/ac" -p "$QIMG" QUITTER SYS 0x2000 < "$ROOT/tests/QUITTER" 2>/dev/null
+"$VII" boot "$QIMG" >/dev/null
+"$VII" speed maximum >/dev/null; "$VII" kbdelay 0.2 >/dev/null
+"$VII" await "(volumes)" 90 >/dev/null
+"$VII" settle 2 >/dev/null
+k key "down arrow"; k line ""
+"$VII" await "QUITTER" 60 >/dev/null || bad "QUITTER never appeared"
+"$VII" settle 2 >/dev/null
+k key "down arrow"; k key "down arrow"; k line ""
+"$VII" await "(volumes)" 90 >/dev/null || bad "another program's quit did not come back"
+"$VII" settle 3 >/dev/null
+snapshot
+assert_left "another program's quit lands here too" 0 "(volumes)"
+
+#--------------------------------------
+# ...and the same job done from the Apple, which is the only way to reach a
+# volume that is not a .po on the Mac -- a card partition, or one on a share.
+#
+# This one writes to a LIVE volume, so the order it does things in is the whole
+# safety argument: the original goes to QUIT.ORIG and is read back and compared
+# BEFORE PRODOS is touched at all. The assertions below check the outcome of
+# that; the ordering itself is argued in docs/design.md 15.
+#--------------------------------------
+eject_now
+rm -f "$QIMG" "$QIMG.quitsave"
+cp "$ROOT/build/ZIPFILER.po" "$QIMG"
+
+"$VII" boot "$QIMG" >/dev/null || { echo "boot failed" >&2; exit 1; }
+"$VII" speed maximum >/dev/null; "$VII" kbdelay 0.2 >/dev/null
+"$VII" await "(volumes)" 90 >/dev/null || bad "never booted for the on-Apple patcher"
+"$VII" settle 2 >/dev/null
+k key "down arrow"; k line ""                    # into /ZIPFILER
+"$VII" await "QPATCH" 60 >/dev/null || bad "QPATCH.SYSTEM is not on the disk"
+"$VII" settle 2 >/dev/null
+k key "down arrow"; k line ""                    # RET on QPATCH.SYSTEM
+"$VII" await "WHICH ONE" 90 >/dev/null || bad "the patcher never asked for a volume"
+"$VII" settle 3 >/dev/null
+
+# Which number /ZIPFILER got depends on what else is on line, so read it off
+# the screen rather than assuming. /RAM is usually first and usually is not.
+snapshot
+volnum="$(grep -F "/ZIPFILER" "$SCREEN" | head -1 | sed 's/^ *\([0-9]\)\..*/\1/')"
+if [ -n "$volnum" ]; then
+    ok "the patcher lists the volumes"
+else
+    bad "the patcher lists the volumes" "$(head -6 "$SCREEN")"
+    volnum=2
+fi
+
+k text "$volnum"
+"$VII" await "QUITTING NOW GOES TO" 90 >/dev/null || bad "it never read PRODOS"
+"$VII" settle 3 >/dev/null
+snapshot
+if grep -q "ORIGINAL" "$SCREEN"; then
+    ok "it recognises the original quit routine"
+else
+    bad "it recognises the original quit routine" "$(head -6 "$SCREEN")"
+fi
+
+k text "I"
+"$VII" await "DONE" 120 >/dev/null || bad "the on-Apple install never finished"
+"$VII" settle 3 >/dev/null
+snapshot
+if grep -q "REBOOT" "$SCREEN"; then
+    ok "and says the change needs a reboot"
+else
+    bad "and says the change needs a reboot" "$(tail -8 "$SCREEN")"
+fi
+
+# The disk is only really changed once Virtual ][ flushes it.
+eject_now
+out="$(python3 "$ROOT/tools/quitpatch.py" status "$QIMG" 2>&1)"
+if echo "$out" | grep -q "ZipFiler"; then
+    ok "patching from the Apple really changed PRODOS"
+else
+    bad "patching from the Apple really changed PRODOS" "$out"
+fi
+if "$ROOT/tools/ac" -g "$QIMG" QUIT.ORIG 2>&1 | grep -q "No match"; then
+    bad "and left the original in QUIT.ORIG" "there is no QUIT.ORIG"
+else
+    saved="$("$ROOT/tools/ac" -g "$QIMG" QUIT.ORIG | python3 -c "
+import sys
+d = sys.stdin.buffer.read()
+plain = bytes(c & 0x7f for c in d)
+print('yes' if len(d) == 1024 and b'BITSY' in plain else 'no')")"
+    if [ "$saved" = "yes" ]; then
+        ok "and left the real original in QUIT.ORIG"
+    else
+        bad "and left the real original in QUIT.ORIG" "it is not 1024 bytes of Bitsy Bye"
+    fi
+fi
+
+#--- and putting Bitsy Bye back really puts Bitsy Bye back. The image was
+#    patched from the Apple, which keeps its original in QUIT.ORIG on the
+#    volume rather than in a .quitsave on the Mac, so restore it the same way
+#    it was patched: with the Mac tool, from a fresh patch of its own.
+eject_now
+cp "$ROOT/build/ZIPFILER.po" "$QIMG"
+rm -f "$QIMG.quitsave"
+python3 "$ROOT/tools/quitpatch.py" install "$QIMG" >/dev/null 2>&1
+python3 "$ROOT/tools/quitpatch.py" restore "$QIMG" >/dev/null 2>&1
+out="$(python3 "$ROOT/tools/quitpatch.py" status "$QIMG" 2>&1)"
+if echo "$out" | grep -q "Bitsy Bye"; then
+    ok "restoring puts the original back"
+else
+    bad "restoring puts the original back" "$out"
+fi
+if [ ! -f "$QIMG.quitsave" ]; then
+    ok "and takes the saved copy away with it"
+else
+    bad "and takes the saved copy away with it" "$QIMG.quitsave is still there"
+fi
+fi
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
