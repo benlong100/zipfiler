@@ -33,7 +33,7 @@ esac
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGES=("$@")
-[ ${#IMAGES[@]} -eq 0 ] && IMAGES=("$ROOT/build/ZIPEDIT-REL.po")
+[ ${#IMAGES[@]} -eq 0 ] && IMAGES=("$ROOT/build/ZIPFILER.po")
 
 # Stop Spotlight re-creating its index here; that is what keeps scattering
 # directories among the disk images.
