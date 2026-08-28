@@ -58,13 +58,58 @@ def read_prodos(image):
         sys.exit(f"{image}: no PRODOS file on it -- is this a bootable image?")
     return r.stdout
 
+# Fields in a ProDOS directory entry that describe the file rather than where
+# its blocks are. Deleting and re-adding a file loses every one of them, and
+# the access byte is the one that matters: a bootable volume very often ships
+# with PRODOS LOCKED, and coming back unlocked is a change nobody asked for.
+ENTRY_ATTRS = [0x10] + list(range(0x18, 0x25))   # type, dates, version, access, aux
+
+def entry_offset(image, want=b"PRODOS"):
+    """Where that file's 39-byte directory entry starts in the image."""
+    with open(image, "rb") as f:
+        blk = 2
+        while blk:
+            f.seek(blk * 512)
+            b = f.read(512)
+            if len(b) < 512:
+                return None
+            nxt = b[2] | (b[3] << 8)
+            for i in range(13):
+                off = 4 + i * 39
+                e = b[off:off + 39]
+                if (e[0] >> 4) in (1, 2, 3, 0xD):
+                    if e[1:1 + (e[0] & 0x0F)] == want:
+                        return blk * 512 + off
+            blk = nxt
+    return None
+
+def read_attrs(image):
+    off = entry_offset(image)
+    if off is None:
+        return None
+    with open(image, "rb") as f:
+        f.seek(off)
+        e = f.read(39)
+    return {a: e[a] for a in ENTRY_ATTRS}
+
+def write_attrs(image, attrs):
+    off = entry_offset(image)
+    if off is None or not attrs:
+        return
+    with open(image, "r+b") as f:
+        for a, v in attrs.items():
+            f.seek(off + a)
+            f.write(bytes([v]))
+
 def write_prodos(image, data):
-    # AppleCommander will not overwrite, so the old one goes first. The image
-    # is a copy on the Mac; nothing on a real disk is at risk here.
+    # AppleCommander will not overwrite, so the old one goes first -- and that
+    # throws away the file's attributes, so they are put back afterwards.
+    attrs = read_attrs(image)
     ac("-d", str(image), "PRODOS")
     r = ac("-p", str(image), "PRODOS", "SYS", stdin=data)
     if r.returncode != 0:
         sys.exit(f"{image}: could not write PRODOS back: {r.stderr.decode()}")
+    write_attrs(image, attrs)
 
 def find_quit(prodos):
     hits = []
@@ -156,6 +201,9 @@ def cmd_install(image, routine):
     print(f"  quit routine at {hex(off)} replaced, {len(data)} bytes")
     print(f"  original saved to {s}")
     print(f"  quitting any program on this disk now runs ZIPFILER.SYSTEM")
+    a = read_attrs(image)
+    if a and not a[0x1E] & 0x02:
+        print(f"  PRODOS was locked (access ${a[0x1E]:02X}) and still is")
 
 def cmd_restore(image):
     s = savepath(image)

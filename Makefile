@@ -20,7 +20,19 @@ AC      := $(TOOLS)/ac
 VII     := $(TOOLS)/vii.sh
 
 BIN     := $(BUILD)/$(NAME)
+VERSION := 1.0
 IMAGE   := $(BUILD)/ZIPFILER.po
+
+# The image the SUITE builds its fixtures from: the program and ProDOS, and
+# nothing else. The shipped image gets the patcher and the instructions put on
+# top of this one.
+#
+# They are separate because a dozen assertions count the root listing and name
+# the row each entry sits on, so every file added to the shipped disk moved all
+# of them. That happened twice -- once for QPATCH.SYSTEM and once for
+# BOOTING.TXT -- and deleting the new file from the fixture afterwards is a
+# list that grows and gets forgotten. This cannot be forgotten.
+BARE    := $(BUILD)/ZIPFILER-BARE.po
 # The replacement quit routine, and the patcher that carries it on the Apple.
 # Defined here rather than beside their rules: make expands a prerequisite
 # when it reads the rule, so a name defined later expands to nothing and the
@@ -28,7 +40,7 @@ IMAGE   := $(BUILD)/ZIPFILER.po
 QUITBIN := src/ZFQUIT.BIN
 QPATCH  := $(BUILD)/QPATCH.SYSTEM
 
-.PHONY: quitcode qpatch quitpatch unquit quitstatus all disk run screen test fixture card eject clean
+.PHONY: dist quitcode qpatch quitpatch unquit quitstatus all disk run screen test fixture card eject clean
 
 all: $(BIN)
 
@@ -54,9 +66,15 @@ $(BUILD):
 
 disk: $(IMAGE)
 
-$(IMAGE): $(BIN) $(QPATCH)
-	@VOL=ZIPFILER SYS=$(NAME) $(TOOLS)/mkdisk.sh $(IMAGE) $(BIN)
+$(BARE): $(BIN)
+	@VOL=ZIPFILER SYS=$(NAME) $(TOOLS)/mkdisk.sh $(BARE) $(BIN)
+
+$(IMAGE): $(BARE) $(QPATCH) disk/BOOTING.TXT
+	@cp $(BARE) $(IMAGE)
 	@$(AC) -p $(IMAGE) QPATCH.SYSTEM SYS 0x2000 < $(QPATCH)
+	@tr '\n' '\r' < disk/BOOTING.TXT | \
+		python3 -c 'import sys; sys.stdout.buffer.write(bytes(b | 0x80 for b in sys.stdin.buffer.read()))' | \
+		$(AC) -p $(IMAGE) BOOTING.TXT TXT
 
 run: $(IMAGE)
 	@$(VII) boot $(IMAGE)
@@ -128,6 +146,27 @@ unquit:
 
 quitstatus:
 	@python3 $(TOOLS)/quitpatch.py status $(IMG)
+
+# --- what gets uploaded ----------------------------------------------------
+# One disk image with everything on it, the instructions as a plain file
+# somebody can read on the Mac, and the licence. The splash is checked against
+# VERSION rather than trusted: the number lives in two places and a release
+# whose splash disagrees with its own filename is a bad look no test catches.
+DIST := $(BUILD)/ZipFiler-$(VERSION)
+ZIP  := $(BUILD)/ZipFiler-$(VERSION).zip
+
+dist: $(IMAGE)
+	@grep -q 'asc   "version $(VERSION)"' src/filer.S || \
+		{ echo "src/filer.S does not say version $(VERSION)"; exit 1; }
+	@rm -rf $(DIST) $(ZIP)
+	@mkdir -p $(DIST)
+	@cp $(IMAGE) $(DIST)/ZIPFILER.po
+	@cp disk/BOOTING.TXT $(DIST)/BOOTING.txt
+	@cp LICENSE $(DIST)/
+	@cd $(BUILD) && zip -qr $(notdir $(ZIP)) $(notdir $(DIST))
+	@rm -rf $(DIST)
+	@echo "release archive: $(ZIP) ($$(du -h $(ZIP) | cut -f1 | tr -d ' '))"
+	@unzip -l $(ZIP)
 
 eject:
 	@osascript -e 'tell application "Virtual ][" to tell (last machine) to eject device "S6D1"' 2>/dev/null || true

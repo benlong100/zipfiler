@@ -80,6 +80,34 @@ tell application "Virtual ]["
     end tell
 end tell
 EOF
+    # A //e autoboots from the HIGHEST numbered slot, so a mass-storage card in
+    # slot 7 takes precedence over the floppy in slot 6 -- and with nothing
+    # attached to it the boot falls through to BASIC. That is not a broken
+    # image and not a wedged emulator, though it looks like both: every test
+    # that touches the machine fails at once, and the image reads perfectly
+    # from the Mac.
+    #
+    # PR#6 is what a person would type, so it is what this types. Only when the
+    # BASIC prompt is what came up, so a machine that booted normally is left
+    # alone.
+    # Wait for the machine to declare itself: either the BASIC prompt, which
+    # means the boot fell through, or real content, which means it did not.
+    # The //e banner alone says nothing yet -- it is on screen in BOTH cases
+    # while the drive is still spinning up, and breaking on it was the first
+    # version of this, which fired never.
+    for _ in $(seq 1 24); do
+        scr="$("$0" screen-raw 2>/dev/null | tr -d ' \n')"
+        case "$scr" in
+            *']'*)
+                as 'tell (last machine) to type line "PR#6"' >/dev/null 2>&1
+                break ;;
+            ''|*Apple//e*)
+                ;;                      # still deciding
+            *)
+                break ;;                # something booted
+        esac
+        sleep 0.5
+    done
     # `restart` resets both of these to the machine's saved defaults, so they
     # have to be set AFTER it, never before.
     "$0" speed "${VII_SPEED:-maximum}"

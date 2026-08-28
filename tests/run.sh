@@ -1261,7 +1261,20 @@ rm -f "$ROOT/tests/_FileInformation.txt" "$ROOT/tests/QUITTER_Output.txt"
 k key "down arrow"; k line ""
 "$VII" await "QUITTER" 60 >/dev/null || bad "QUITTER never appeared"
 "$VII" settle 2 >/dev/null
-k key "down arrow"; k key "down arrow"; k line ""
+# Find QUITTER rather than counting rows down to it. Counting is how this
+# broke: BOOTING.TXT went onto the shipped disk, QUITTER moved down a line, and
+# the RET landed on a text file instead -- which declines, correctly, and left
+# the panel exactly where it was. Entries start at screen row 2.
+snapshot
+qrow="$(grep -n "QUITTER" "$SCREEN" | head -1 | cut -d: -f1)"
+if [ -n "$qrow" ]; then
+    steps=$(( qrow - 1 - 2 ))
+    i=0
+    while [ "$i" -lt "$steps" ]; do k key "down arrow"; i=$((i+1)); done
+else
+    bad "QUITTER is in the listing" "not found on screen"
+fi
+k line ""
 "$VII" await "(volumes)" 90 >/dev/null || bad "another program's quit did not come back"
 "$VII" settle 3 >/dev/null
 snapshot
@@ -1343,6 +1356,85 @@ print('yes' if len(d) == 1024 and b'BITSY' in plain else 'no')")"
     else
         bad "and left the real original in QUIT.ORIG" "it is not 1024 bytes of Bitsy Bye"
     fi
+fi
+
+#--------------------------------------
+# A LOCKED PRODOS, which is what a real volume looks like.
+#
+# Every image built by mkdisk.sh has PRODOS write-enabled, so the patcher was
+# only ever tried against one -- and it failed in the field on a 32MB volume
+# whose system files were locked, as a shipped volume's usually are. ProDOS
+# will not write to a locked file, and the patcher said only "the write
+# failed", which named nothing anybody could act on.
+#
+# Both patchers have to unlock, write, and LOCK IT BACK. A volume that arrived
+# with its system files protected must leave that way.
+#--------------------------------------
+eject_now
+rm -f "$QIMG" "$QIMG.quitsave"
+cp "$ROOT/build/ZIPFILER.po" "$QIMG"
+python3 "$ROOT/tools/setaccess.py" "$QIMG" PRODOS 21 >/dev/null
+
+# The Mac tool deletes and re-adds PRODOS, which throws the attributes away
+# unless it puts them back.
+python3 "$ROOT/tools/quitpatch.py" install "$QIMG" >/dev/null 2>&1
+out="$(python3 "$ROOT/tools/quitpatch.py" status "$QIMG" 2>&1)"
+if echo "$out" | grep -q "ZipFiler"; then
+    ok "the Mac tool patches a locked PRODOS"
+else
+    bad "the Mac tool patches a locked PRODOS" "$out"
+fi
+acc="$(python3 "$ROOT/tools/setaccess.py" "$QIMG" PRODOS)"
+if echo "$acc" | grep -q "LOCKED"; then
+    ok "and leaves it locked, as it found it"
+else
+    bad "and leaves it locked, as it found it" "$acc"
+fi
+
+#--- and the same from the Apple, which is the one that failed
+eject_now
+rm -f "$QIMG" "$QIMG.quitsave"
+cp "$ROOT/build/ZIPFILER.po" "$QIMG"
+python3 "$ROOT/tools/setaccess.py" "$QIMG" PRODOS 21 >/dev/null
+
+"$VII" boot "$QIMG" >/dev/null || { echo "boot failed" >&2; exit 1; }
+"$VII" speed maximum >/dev/null; "$VII" kbdelay 0.2 >/dev/null
+"$VII" await "(volumes)" 90 >/dev/null || bad "the locked image never booted"
+"$VII" settle 2 >/dev/null
+k key "down arrow"; k line ""
+"$VII" await "QPATCH" 60 >/dev/null || bad "QPATCH.SYSTEM is not on the disk"
+"$VII" settle 2 >/dev/null
+k key "down arrow"; k line ""
+"$VII" await "WHICH ONE" 90 >/dev/null || bad "the patcher never asked for a volume"
+"$VII" settle 3 >/dev/null
+snapshot
+volnum="$(grep -F "/ZIPFILER" "$SCREEN" | head -1 | sed 's/^ *\([0-9]\)\..*/\1/')"
+[ -n "$volnum" ] || volnum=2
+k text "$volnum"
+"$VII" await "QUITTING NOW" 90 >/dev/null || bad "it never read the locked PRODOS"
+"$VII" settle 3 >/dev/null
+k text "I"
+"$VII" await "DONE" 120 >/dev/null || bad "the install against a locked PRODOS never finished"
+"$VII" settle 3 >/dev/null
+snapshot
+if grep -q "DONE" "$SCREEN"; then
+    ok "QPATCH gets through a locked PRODOS"
+else
+    bad "QPATCH gets through a locked PRODOS" "$(tail -8 "$SCREEN")"
+fi
+
+eject_now
+out="$(python3 "$ROOT/tools/quitpatch.py" status "$QIMG" 2>&1)"
+if echo "$out" | grep -q "ZipFiler"; then
+    ok "and really wrote it"
+else
+    bad "and really wrote it" "$out"
+fi
+acc="$(python3 "$ROOT/tools/setaccess.py" "$QIMG" PRODOS)"
+if echo "$acc" | grep -q "LOCKED"; then
+    ok "and locked it again afterwards"
+else
+    bad "and locked it again afterwards" "$acc"
 fi
 
 #--- and putting Bitsy Bye back really puts Bitsy Bye back. The image was

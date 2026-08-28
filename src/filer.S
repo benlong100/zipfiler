@@ -762,7 +762,7 @@ SP1          asc   "a file manager for the Apple //e"
              dfb   $00
 SP2          asc   "ProDOS 8, eighty columns, two panels"
              dfb   $00
-SP3          asc   "version 0.1"
+SP3          asc   "version 1.0"
              dfb   $00
 SP4          asc   "reading the volumes..."
              dfb   $00

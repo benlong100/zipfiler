@@ -1,0 +1,169 @@
+MAKING A DISK COME UP IN ZIPFILER
+=================================
+
+Two separate things, and you can do
+either without the other:
+
+  1. BOOTING into ZipFiler, so the
+     machine starts here.
+  2. QUITTING back to ZipFiler, so
+     leaving any program returns here
+     instead of the ProDOS selector.
+
+Do both and the volume belongs to
+ZipFiler from the moment it spins up
+until you turn the machine off.
+
+
+1. BOOTING INTO ZIPFILER
+------------------------
+
+When ProDOS starts it runs the FIRST
+file ending in .SYSTEM that it finds
+in the volume directory. Not the one
+you would pick, and not in alphabet
+order: the first one in the directory,
+which is the order files were put
+there.
+
+That is the order ZipFiler shows you.
+Its listing is the directory as it
+really is, unsorted, which is exactly
+what you need for this.
+
+So look at the volume's root and find
+ZIPFILER.SYSTEM. If nothing else ending
+in .SYSTEM appears ABOVE it, the disk
+already boots into ZipFiler and there
+is nothing to do.
+
+If something does appear above it --
+BASIC.SYSTEM usually -- then that is
+what boots, and ZipFiler has to be
+moved in front of it.
+
+
+MOVING IT IN FRONT
+------------------
+
+ProDOS puts a new file in the earliest
+free slot in the directory. So the way
+to move a file up is to take away the
+ones above it, put yours back first,
+and then put theirs back after.
+
+Say BASIC.SYSTEM sits above ZipFiler.
+On the volume you are fixing:
+
+  a. Tag both files with SPACE and copy
+     them somewhere safe with C. The
+     ZipFiler disk in the other panel
+     will do.
+
+     DO NOT SKIP THIS. The next step
+     deletes them, and a copy you have
+     not made is a copy you do not have.
+
+  b. Delete both from this volume, D.
+
+  c. Copy ZIPFILER.SYSTEM back FIRST. It
+     takes the earliest free slot, which
+     is the one BASIC.SYSTEM had.
+
+  d. Copy BASIC.SYSTEM back after it.
+
+Now the listing shows ZIPFILER.SYSTEM
+above BASIC.SYSTEM, and the volume boots
+into ZipFiler.
+
+If more than one .SYSTEM file sits above
+ZipFiler, take them all away in step (b)
+and put them all back in step (d), in
+whatever order you like. Only the first
+one matters.
+
+A NOTE ON BASIC.SYSTEM: leave the name
+alone. Renaming it to something not
+ending in .SYSTEM would also stop it
+booting, and it is tempting -- but
+ZipFiler looks for BASIC.SYSTEM by that
+exact name when you press RET on a BASIC
+program, and would no longer find it.
+
+
+2. QUITTING BACK TO ZIPFILER
+----------------------------
+
+Run QPATCH.SYSTEM from this disk. Press
+RET on it in ZipFiler, or boot the disk
+and pick it out of the listing.
+
+It shows every volume on line and says
+which quit routine each one has. Pick
+the volume you want and press I.
+
+From then on, quitting ANY program on
+that volume comes back to ZipFiler,
+because the patch replaces the piece of
+ProDOS that decides what happens when a
+program quits. It is not a ZipFiler
+setting; it belongs to the volume.
+
+Reboot that volume for it to take
+effect.
+
+To undo it, run QPATCH.SYSTEM again,
+pick the volume, and press R.
+
+
+WHAT IT DOES TO YOUR DISK
+-------------------------
+
+It writes to that volume's copy of
+PRODOS, which is its operating system.
+So, in order:
+
+  - It saves what it is replacing to a
+    file called QUIT.ORIG on the same
+    volume.
+  - It reads QUIT.ORIG back and checks
+    it matches before touching PRODOS at
+    all. If the save did not survive the
+    trip it stops, and the disk is
+    exactly as it was.
+  - Only then does it write, and it
+    reads that back and checks it too.
+
+If PRODOS is locked -- and on a volume
+that ships ready to boot it usually is
+-- QPATCH unlocks it, writes, and locks
+it again. You do not have to do
+anything about that.
+
+R puts the original back from QUIT.ORIG
+and removes the file.
+
+
+BEFORE YOU DO IT TO A DISK THAT MATTERS
+---------------------------------------
+
+Try it on a disk you can afford to
+lose. Everything above has been tested,
+but this writes to an operating system,
+and a volume whose PRODOS is wrong does
+not boot.
+
+Each volume keeps its own PRODOS, so
+each one you want to behave this way
+needs patching separately.
+
+
+AND IF YOU WOULD RATHER NOT
+---------------------------
+
+You do not have to reorder anything.
+Patch the quit routine and leave the
+boot alone: the machine comes up in
+whatever it came up in before, and Q
+from there lands you in ZipFiler. One
+keystroke, and nothing moved.

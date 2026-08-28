@@ -27,3 +27,10 @@ build/QUITTEST.po
 *.quitsave
 src/QPATCH.SYSTEM
 src/zfquitdata.S
+
+# The web page lives with the rest of the trompingmarmots.com sites, not here
+# -- the same arrangement ZipEdit uses. The screenshots it is built from are
+# large and are source material for the page, not for the program.
+web/
+Screenshots/
+build/zipfiler-site.html

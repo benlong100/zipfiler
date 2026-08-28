@@ -280,10 +280,12 @@ INSTALL      lda   ISOURS
 :savefail    lda   #<MSAVEFAIL
              ldy   #>MSAVEFAIL
              jsr   PUTS
+             jsr   SAYERR
              jmp   ANYKEY
 :writefail   lda   #<MWRITEFAIL
              ldy   #>MWRITEFAIL
              jsr   PUTS
+             jsr   SAYERR
              jmp   ANYKEY
 
 *--------------------------------------
@@ -326,7 +328,46 @@ RESTORE      jsr   OPEN2
 :bad         lda   #<MWRITEFAIL
              ldy   #>MWRITEFAIL
              jsr   PUTS
+             jsr   SAYERR
              jmp   ANYKEY
+
+*--------------------------------------
+* SAYERR -- "PRODOS SAID $xx", and what the common one means
+*
+* A failure that names no code is one nobody can act on. $4E is the one worth
+* spelling out: a locked file and a write-protected disk both come back as it,
+* and a volume that boots very often has its system files locked.
+*--------------------------------------
+SAYERR       lda   MLIERR
+             beq   :none
+             lda   #<MERRIS
+             ldy   #>MERRIS
+             jsr   PUTS
+             lda   MLIERR
+             lsr
+             lsr
+             lsr
+             lsr
+             jsr   HEXDIG
+             lda   MLIERR
+             and   #$0f
+             jsr   HEXDIG
+             lda   MLIERR
+             cmp   #$4e
+             bne   :nl
+             lda   #<MERR4E
+             ldy   #>MERR4E
+             jmp   PUTS
+:nl          lda   #$8d
+             jmp   COUT
+:none        rts
+
+HEXDIG       and   #$0f
+             cmp   #$0a
+             bcc   :digit
+             adc   #$06             ; carry is set, so this adds 7: A-F
+:digit       adc   #$b0
+             jmp   COUT
 
 *--------------------------------------
 * ANYKEY -- wait, then start over so another volume can be done
@@ -352,8 +393,10 @@ ANYKEY       lda   #<MAGAIN
 * SET_MARK and a single 1024-byte transfer, rather than rewriting the whole
 * file: far less to be in the middle of if something goes wrong.
 *--------------------------------------
-PUTBLOCK     jsr   OPENPRO
+PUTBLOCK     jsr   UNLOCK           ; a booting volume often has PRODOS locked
              bcs   :out
+             jsr   OPENPRO
+             bcs   :relock
              lda   OREF
              sta   WREF
              sta   MREF
@@ -363,6 +406,9 @@ PUTBLOCK     jsr   OPENPRO
              jsr   WRITEF
 :shut        php
              jsr   CLOSEF
+             plp
+:relock      php                    ; put the lock back either way, so a
+             jsr   RELOCK           ; failure leaves the volume as it was
              plp
 :out         rts
 
@@ -628,7 +674,76 @@ PUTS         sta   PTR
 ONLINE       jsr   MLI
              dfb   $c5
              da    ONLPARM
+             sta   MLIERR
              rts
+
+*--- GET_FILE_INFO and SET_FILE_INFO, on the PRODOS being patched. A volume
+*    that boots is often shipped with its system files LOCKED, and ProDOS will
+*    not let anybody write to a locked file. That came back as "the write
+*    failed" and named nothing, which is no use to somebody holding a disk
+*    that will not take the patch.
+GINFOF       jsr   MLI
+             dfb   $c4
+             da    GIPARM
+             sta   MLIERR
+             rts
+
+SINFOF       jsr   MLI
+             dfb   $c3
+             da    SIPARM
+             sta   MLIERR
+             rts
+
+*--------------------------------------
+* UNLOCK / RELOCK -- around the write, and only if it is needed
+*
+* The access byte is read once and kept, so RELOCK puts back exactly what was
+* there: a volume whose system files were locked is left with them locked.
+*--------------------------------------
+UNLOCK       lda   #$00
+             sta   DIDLOCK
+             jsr   GINFOF
+             bcs   :out
+             lda   GIACCESS
+             sta   WASACC
+             and   #$02             ; already writable? nothing to do
+             bne   :none
+             lda   #$01
+             sta   DIDLOCK
+             lda   GIACCESS
+             ora   #$c2             ; write, rename and destroy
+             jmp   SETACC
+:none        clc
+:out         rts
+
+RELOCK       lda   DIDLOCK
+             beq   :none
+             lda   #$00
+             sta   DIDLOCK
+             lda   WASACC
+             jmp   SETACC
+:none        clc
+             rts
+
+*--- SETACC -- A into the access byte, carrying the other fields across.
+*    SET_FILE_INFO's reserved bytes are where GET_FILE_INFO left the storage
+*    type and the block count, so the two blocks are never shared.
+SETACC       sta   SIACCESS
+             lda   GITYPE
+             sta   SITYPE
+             lda   GIAUX
+             sta   SIAUX
+             lda   GIAUX+1
+             sta   SIAUX+1
+             lda   GIMODD
+             sta   SIMODD
+             lda   GIMODD+1
+             sta   SIMODD+1
+             lda   GIMODT
+             sta   SIMODT
+             lda   GIMODT+1
+             sta   SIMODT+1
+             jmp   SINFOF
 
 OPENPRO      lda   #<PATH
              sta   OPATH
@@ -698,6 +813,27 @@ ONLPARM      dfb   $02
              dfb   $00
              da    ONLBUF
 
+GIPARM       dfb   $0a
+             da    PATH
+GIACCESS     dfb   $00
+GITYPE       dfb   $00
+GIAUX        dfb   $00,$00
+GISTORE      dfb   $00
+GIBLOCKS     dfb   $00,$00
+GIMODD       dfb   $00,$00
+GIMODT       dfb   $00,$00
+GICRED       dfb   $00,$00
+GICRET       dfb   $00,$00
+
+SIPARM       dfb   $07
+             da    PATH
+SIACCESS     dfb   $00
+SITYPE       dfb   $00
+SIAUX        dfb   $00,$00
+             dfb   $00,$00,$00      ; reserved, and it must stay zero
+SIMODD       dfb   $00,$00
+SIMODT       dfb   $00,$00
+
 OPARM        dfb   $03
 OPATH        da    PATH
              da    IOBUF
@@ -740,6 +876,9 @@ QUITP        dfb   $04,$00,$00,$00,$00,$00,$00
 * Storage
 *--------------------------------------
 ENTI         dfb   $00
+MLIERR       dfb   $00              ; what ProDOS last said
+WASACC       dfb   $00              ; PRODOS's access byte before we touched it
+DIDLOCK      dfb   $00              ; and whether we had to unlock it
 OFF          dw    $0000
 PROLEN       dw    $0000
 NFOUND       dfb   $00
@@ -803,6 +942,12 @@ MWRITEFAIL   asc   "THE WRITE FAILED OR DID NOT READ"
              asc   "BACK THE SAME. QUIT.ORIG HOLDS THE"
              dfb   $8d
              asc   "ORIGINAL; USE R TO PUT IT BACK."
+             dfb   $8d,$00
+MERRIS       asc   "PRODOS SAID $"
+             dfb   $00
+MERR4E       asc   " -- THE FILE IS LOCKED OR THE"
+             dfb   $8d
+             asc   "DISK IS WRITE PROTECTED."
              dfb   $8d,$00
 MNOSAVE      dfb   $8d
              asc   "THERE IS NO QUIT.ORIG ON THAT"

@@ -13,11 +13,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AC="$ROOT/tools/ac"
 OUT="${1:-$ROOT/build/LAUNCH.po}"
 
-cp "$ROOT/build/ZIPFILER.po" "$OUT"
+cp "$ROOT/build/ZIPFILER-BARE.po" "$OUT"
 
-# Out, for the same reason as in tests/mkfixture.sh: the launch tests walk down
-# to a numbered row, and an extra file at the top moves every one of them.
-"$AC" -d "$OUT" QPATCH.SYSTEM 2>/dev/null || true
+# Built from the BARE image -- the program and ProDOS, nothing else -- so
+# what gets added to the shipped disk cannot move the rows this suite
+# counts. See the note beside BARE in the Makefile.
 
 # The programs are assembled here rather than committed: they are under 200
 # bytes each and they have to match their source, which a checked-in binary
