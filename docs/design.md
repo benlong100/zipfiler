@@ -658,11 +658,10 @@ wants for its rules and borders" among the things to bring across from ZipEdit,
 unbroken lines where the ASCII characters draw a row of dashes and a column of
 bars. On its own each is plainly better.
 
-**The junction is what killed it.** MouseText has no corner and no
-T-junction -- there is nothing in the set that joins a horizontal to a
-vertical, which ZipEdit's help border ran into first. Worse, the strokes sit on
-the EDGES of their cells: `$4C` along the top, `$5F` down the left. So where
-the divider meets the rule, a cell holding one glyph can give:
+**The junction is what killed it.** Where the divider meets the rule you would
+need rule-left, vertical, and rule-right inside one cell, and no glyph does
+that. The strokes sit on the EDGES of their cells -- `$4C` along the top, `$5F`
+down the left -- so a cell holding one glyph can give:
 
 | | horizontal | vertical |
 |---|---|---|
@@ -682,6 +681,25 @@ Read off the screen rather than reasoned about: the pixels were dumped from a
 screenshot at each variant, because the glyph geometry is not something the
 character codes show and the comments about it elsewhere are easy to misread.
 Cells are 7x16; `$4C` lands at y=0..1 of its cell and `$5F` at x=0.
+
+**A correction, made later.** The reasoning above said MouseText "has no corner
+and no T-junction" and treated the edge-aligned strokes as the obstacle. The
+T-junction part is right and is what matters here. The corner part was wrong,
+and wrong because this project only ever knew one of the two verticals:
+
+`$5A` draws a vertical down the **right** edge of its cell, where `$5F` draws
+down the left. A stroke on a cell edge is a stroke on the boundary between two
+cells, so a `$5A` vertical lands exactly where the next cell's `$4C` rule
+begins, and they join. That is how Sneeze (Karl Bunker, 1992) closes all four
+corners of a box with no corner glyph, and there is a corner glyph too --
+`$54`, bottom-left.
+
+None of that rescues the layout ZipFiler actually has, which is one rule
+crossed by one divider: a cross still needs three strokes in one cell. But it
+means **a boxed layout would be drawable in MouseText**, and the choice between
+the two is about listing space rather than about what the character set can do.
+See `docs/mousetext.md` for the glyph table, the construction, and what boxing
+the panels would cost.
 
 **What this does not settle.** On an original //e MouseText does not exist at
 all and those codes are a second copy of inverse uppercase, so a border built
