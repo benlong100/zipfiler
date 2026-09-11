@@ -8,7 +8,6 @@
 #   make eject    flush the mounted image to disk
 #   make clean
 
-VERSION := 0.1
 SRC     ?= src/filer.S
 NAME    ?= ZIPFILER.SYSTEM
 BUILD   := build
@@ -20,7 +19,7 @@ AC      := $(TOOLS)/ac
 VII     := $(TOOLS)/vii.sh
 
 BIN     := $(BUILD)/$(NAME)
-VERSION := 1.0
+VERSION := 1.1
 IMAGE   := $(BUILD)/ZIPFILER.po
 
 # The image the SUITE builds its fixtures from: the program and ProDOS, and
