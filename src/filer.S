@@ -1449,9 +1449,9 @@ FMTPANEL     lda   ENTI
              sta   NUMLO
              lda   (PBLKHI),y
              sta   NUMHI
-             lda   FCOL
-             clc
-             adc   #$16
+             lda   FCOL             ; two columns further right than it was,
+             clc                    ; which is what <DIR> needs and the panel
+             adc   #$18             ; had spare
              sta   TMPA
              jsr   PUTNUM
 :done        rts
@@ -1500,14 +1500,26 @@ POWLO        dfb   $10,$e8,$64,$0a,$01
 POWHI        dfb   $27,$03,$00,$00,$00
 
 *--------------------------------------
-* TYPESTR -- A = ProDOS file type, X = column. Three characters into LINEBUF.
+* TYPESTR -- A = ProDOS file type, X = column. Three characters into LINEBUF,
+* or FIVE for a directory, which is written <DIR>.
 *
 * A table of the types worth naming, and hex for the rest, which is what a
 * catalogue has always done with a type it does not recognise.
+*
+* THE BRACKETS ARE THE POINT. A directory is not a file with a type, it is the
+* thing RET goes into, and in a column of BAS and TXT and BIN the word DIR
+* reads as one more of them. The angle brackets are what a catalogue listing
+* has used for this since long before this program, and they cost two columns
+* of a panel that had a dozen spare.
 *--------------------------------------
 TYPESTR      sta   TMPB
              stx   TMPA
              ldy   #$00
+             cmp   #$0f             ; DIR opens with a bracket, and the three
+             bne   :scan            ; letters then start one column along
+             lda   #$bc             ; '<'
+             sta   LINEBUF,x
+             inc   TMPA
 :scan        cpy   #TYPLEN
              bcs   :hex
              lda   TYPTBL,y
@@ -1531,7 +1543,14 @@ TYPESTR      sta   TMPB
              iny
              lda   TYPTBL,y
              sta   LINEBUF,x
-             rts
+
+             lda   TMPB             ; and closes it again
+             cmp   #$0f
+             bne   :done
+             inx
+             lda   #$be             ; '>'
+             sta   LINEBUF,x
+:done        rts
 
 :hex         ldx   TMPA
              lda   #$a4             ; '$'

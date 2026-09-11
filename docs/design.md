@@ -44,28 +44,37 @@ and a hint row.
 ```
 >/WORK/DOCS                            | /BACKUP
 ---------------------------------------+----------------------------------------
-> CHAPTER.ONE     TXT    14            |  ARCHIVE         DIR     4
-  CHAPTER.TWO     TXT     9            | *README          TXT     2
-> NOTES           TXT     3            |
- *ZIPEDIT.SYSTEM  SYS    21            |
-  OLD             DIR     2            |
+> CHAPTER.ONE     TXT      14          |  ARCHIVE         <DIR>     4
+  CHAPTER.TWO     TXT       9          | *README          TXT       2
+> NOTES           TXT       3          |
+ *ZIPEDIT.SYSTEM  SYS      21          |
+  OLD             <DIR>     2          |
 2 tagged, 17 blocks                    |
         TAB panel  SPC tag  RET open  C copy  R name  L ock  D el  S wap
 ```
 
 Columns: 39 for the left panel, one separator, 40 for the right. An entry line
-spends 26 of its 39 — a tag column, a lock column, fifteen for the name, three
-for the type and five for the blocks used. The remaining thirteen are left
-empty deliberately. There is room there for a modification date and it is not
-worth the space it would cost on screen or the four bytes an entry it would
-cost in memory.
+spends 28 of its 39 — a tag column, a lock column, fifteen for the name, five
+for the type and five for the blocks used. The remaining eleven are left empty
+deliberately. There is room there for a modification date and it is not worth
+the space it would cost on screen or the four bytes an entry it would cost in
+memory.
+
+The type field is five rather than three because a directory is written
+`<DIR>`. Ordinary types are three letters left-aligned in it, so the blocks
+column sits two further right than it first did; the panel had the room and
+nothing else moved.
 
 - `>` marks a tagged entry, `*` a locked one. (The sketch above said `»`; the
   //e's character set has no such glyph and MouseText offers nothing closer.) The asterisk is the one `CATALOG`
   already puts against a locked file, so it needs no explaining.
 - `>` on the path row marks the panel with focus. The cursor line is drawn
   inverse.
-- A directory carries `DIR` in the type column, so it reads as somewhere to go.
+- A directory carries `<DIR>` in the type column, so it reads as somewhere to
+  go rather than as one more three-letter type in a column of `BAS`, `TXT` and
+  `BIN`. The brackets are what catalogue listings have used for this since
+  long before this program. Volumes still read `VOL`: the volumes panel is
+  nothing but volumes, so there is nothing there to stand out from.
 - The status row carries the tagged count and the blocks they add up to, which
   is the number wanted before a copy, and is where errors and progress appear.
 - The hint row is the same idea as ZipEdit's cheat sheet and can be the first

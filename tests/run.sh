@@ -202,7 +202,10 @@ assert_row "with its type"                        2 "SYS"
 # own accounting rather than against a number I typed
 sysblk=$("$ROOT/tools/ac" -l "$FIXTURE" | awk '/ZIPFILER.SYSTEM/ {print $3+0}')
 assert_row "and its size in blocks"               2 "$sysblk"
-assert_row "a subdirectory reads as DIR"          3 "DOCS"
+assert_row "a subdirectory is named"              3 "DOCS"
+# The brackets are what separates a directory from a file at a glance, in a
+# column where DIR would otherwise read as one more three-letter type.
+assert_row "and reads as <DIR>, not DIR"          3 "<DIR>"
 assert_row "ProDOS itself is listed"              6 "PRODOS"
 assert_row "with the blocks it really occupies"   6 "34"
 fi
@@ -821,7 +824,7 @@ k text "ARCHIVE"
 k line ""
 "$VII" settle 2 >/dev/null
 snapshot
-assert_row "and it appears as a directory"        6 "ARCHIVE         DIR"
+assert_row "and it appears as a directory"        6 "ARCHIVE         <DIR>"
 assert_row "and says so"                         22 "made"
 
 # a directory that ProDOS will actually walk into
